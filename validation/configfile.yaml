@@ -1,0 +1,3 @@
+validation_vcf: ../validation_STDB.vcf.gz 
+validation_pheno_file: ../validation_STDB.phenos
+random_forest: ../results/iteration15/random_forest_model.pkl

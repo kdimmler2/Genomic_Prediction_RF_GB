@@ -1,0 +1,37 @@
+{
+'gatk_table' :
+{
+'output' : '.logs/{rule}/%j.{rule}.out',
+'error'  : '.logs/{rule}/%j.{rule}.err'
+},
+'split_table' :
+{
+'output' : '.logs/{rule}/%j.{rule}.out',
+'error'  : '.logs/{rule}/%j.{rule}.err'
+},
+'convert_tables' :
+{
+'output' : '.logs/{rule}/%j.{rule}.out',
+'error'  : '.logs/{rule}/%j.{rule}.err'
+},
+'combine_tables' :
+{
+'output' : '.logs/{rule}/%j.{rule}.out',
+'error'  : '.logs/{rule}/%j.{rule}.err'
+},
+'random_forest' :
+{
+'output' : '.logs/{rule}/%j.{rule}.out',
+'error'  : '.logs/{rule}/%j.{rule}.err'
+},
+'top_80_features' :
+{
+'output' : '.logs/{rule}/%j.{rule}.out',
+'error'  : '.logs/{rule}/%j.{rule}.err'
+},
+'top_80_variants' :
+{
+'output' : '.logs/{rule}/%j.{rule}.out',
+'error'  : '.logs/{rule}/%j.{rule}.err'
+},
+}
