@@ -1,0 +1,913 @@
+---
+title: "Comparing Best RF Models"
+author: "Kirsten Dimmler"
+format:
+  html:
+    toc: true
+    number-sections: true
+    self-contained: true
+execute:
+  echo: true
+  warning: false
+  message: false
+editor: visual
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(patchwork)
+library(RColorBrewer)
+library(ComplexUpset)
+```
+
+# Top Model
+
+## Training Summary
+
+```{r}
+train <- read.csv('RF_summaries/Combined_TopModel_Training.csv', header=TRUE)
+
+train_scores <- train |> select(run, cv_f1)
+
+train_scores_unique <- train_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+train <- train %>%
+  select(-cv_f1, -run) %>%
+  mutate(
+    across(everything(), as.factor))
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(train, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# Summarize F1 stats per run
+train_summary <- train_scores %>%
+  group_by(run) %>%
+  summarise(
+    mean_f1 = mean(cv_f1, na.rm = TRUE),
+    min_f1 = min(cv_f1, na.rm = TRUE),
+    max_f1 = max(cv_f1, na.rm = TRUE)
+  )
+
+plot_f1 <- ggplot(train_scores_unique, aes(x = factor(run), y = cv_f1)) +
+  geom_col(fill = "steelblue", color = 'black') +
+  theme_minimal() +
+  labs(x = "Model Run", y = "F1 Score", title = "F1 Scores") +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Training - Top Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## Test Summary
+
+```{r}
+test <- read.csv('RF_summaries/Combined_TopModel_Test.csv', header=TRUE)
+
+test_scores <- test |> select(run, test_f1)
+
+test_scores_unique <- test_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+test <- test %>%
+  select(-test_f1, -run) %>%
+  mutate(across(everything(), as.factor))
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(test, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+plot_f1 <- ggplot(test_scores_unique, aes(x = factor(run), y = test_f1)) +
+  geom_col(fill = "steelblue", color = 'black') +
+  theme_minimal() +
+  labs(x = "Model Run", y = "F1 Score", title = "F1 Scores") +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Test - Top Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## Validation Summary
+
+```{r}
+val <- read.csv('RF_summaries/Combined_TopModel_Validation.csv', header=TRUE)
+
+val_scores <- val |> select(run, val_f1)
+
+val_scores_unique <- val_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+val <- val %>%
+  select(-val_f1, -run) %>%
+  mutate(across(everything(), as.factor))
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(val, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+plot_f1 <- ggplot(val_scores_unique, aes(x = factor(run), y = val_f1)) +
+  geom_col(fill = "steelblue", color = 'black') +
+  theme_minimal() +
+  labs(x = "Model Run", y = "F1 Score", title = "F1 Scores") +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Validation - Top Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## All Datasets Summary
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- bind_rows(list(train, test, val))
+
+all <- all %>%
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(50, 100, 500, 1000, 1500)),
+    max_depth = factor(max_depth, levels = c(3, 7, 12, 20, 50, 100)),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(20, 50, 100, 200, 500)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 5, 10, 20, 50))
+  )
+
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# --- Step 4: F1 Score Plot ---
+combined_scores <- train_scores %>%
+  left_join(test_scores, by = "run") %>%
+  left_join(val_scores, by = "run")
+
+scores_long <- combined_scores %>%
+  pivot_longer(cols = -run, names_to = "set", values_to = "f1")
+
+# Summarize mean F1 scores
+summary_scores <- scores_long %>%
+  group_by(run, set) %>%
+  summarise(mean_f1 = mean(f1, na.rm = TRUE), .groups = "drop")
+
+# Plot with text labels for mean
+plot_f1 <- ggplot(summary_scores, aes(x = factor(run), y = mean_f1, fill = set)) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6,
+    color = 'black',
+    stat = "identity"
+  ) +
+  geom_text(
+    data = summary_scores,
+    aes(
+      x = factor(run),
+      y = mean_f1 + 0.04,
+      label = sprintf("%.2f", mean_f1),
+      group = set
+    ),
+    position = position_dodge(width = 0.7),
+    size = 3,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = c("cv_f1" = "#1f77b4", "test_f1" = "#2ca02c", "val_f1" = "#ff7f0e")) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "F1 Score",
+    title = "F1 Scores (Mean Highlighted)",
+    fill = "Score Type"
+  ) +
+  coord_cartesian(ylim = c(0, 0.75))
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1)) +
+  plot_annotation(
+    title = "All Datasets – Top Models",
+  )
+
+final_plot
+
+
+```
+
+## Validation and Test Summary
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- bind_rows(list(test, val))
+
+# Convert to factors with correct level ordering
+all <- all %>%
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(50, 100, 500, 1000, 1500)),
+    max_depth = factor(max_depth, levels = c(3, 7, 12, 20, 50, 100)),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(20, 50, 100, 200, 500)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 5, 10, 20, 50))
+  )
+
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# --- Step 4: F1 Score Plot ---
+combined_scores <- test_scores_unique %>%
+  left_join(val_scores_unique, by = "run")
+
+scores_long <- combined_scores %>%
+  pivot_longer(cols = -run, names_to = "set", values_to = "f1")
+
+# Summarize mean F1 scores
+summary_scores <- scores_long %>%
+  group_by(run, set) %>%
+  summarise(mean_f1 = mean(f1, na.rm = TRUE), .groups = "drop")
+
+# Plot with text labels for mean
+plot_f1 <- ggplot(summary_scores, aes(x = factor(run), y = mean_f1, fill = set)) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6,
+    color = 'black',
+    stat = "identity"
+  ) +
+  geom_text(
+    data = summary_scores,
+    aes(
+      x = factor(run),
+      y = mean_f1 + 0.04,
+      label = sprintf("%.2f", mean_f1),
+      group = set
+    ),
+    position = position_dodge(width = 0.7),
+    size = 3,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = c("cv_f1" = "#1f77b4", "test_f1" = "#2ca02c", "val_f1" = "#ff7f0e")) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "F1 Score",
+    title = "F1 Scores (Mean Highlighted)",
+    fill = "Score Type"
+  ) +
+  coord_cartesian(ylim = c(0, 0.75))
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1)) +
+  plot_annotation(
+    title = "Test and Validation Datasets – Top Models",
+  )
+
+final_plot
+```
+
+# Top 5 Models
+
+## Training Summary
+
+```{r}
+train <- read.csv('RF_summaries/Combined_Top5_Training.csv', header=TRUE)
+
+train_scores <- train |> select(run, cv_f1)
+
+# train_scores_unique <- train_scores %>%
+#   distinct(run, .keep_all = TRUE)
+
+train <- train %>%
+  select(-cv_f1, -run) %>%
+  mutate(
+    # Recode first, then convert to factor
+    max_features = case_when(
+      max_features == "1" ~ "0.5",
+      max_features == "2" ~ "sqrt",
+      max_features == "3" ~ "log2",
+      TRUE ~ as.character(max_features)  # <-- required fallback
+    ),
+    criterion = case_when(
+      criterion == "1" ~ "gini",
+      criterion == "2" ~ "entropy",
+      TRUE ~ as.character(criterion)
+    )
+  ) %>%
+  mutate(across(everything(), as.factor)) 
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+train_scores_grouped <- train_scores %>%
+  group_by(run) %>%
+  mutate(instance = row_number()) %>%
+  ungroup()
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(train, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+train_summary <- train_scores_grouped %>%
+  group_by(run) %>%
+  summarise(
+    min_f1 = min(cv_f1, na.rm = TRUE),
+    max_f1 = max(cv_f1, na.rm = TRUE),
+    mean_f1 = mean(cv_f1, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+plot_f1 <- ggplot(train_summary, aes(x = factor(run), y = mean_f1)) +
+  geom_col(fill = "steelblue", width = 0.6) +
+  geom_errorbar(
+    aes(ymin = min_f1, ymax = max_f1),
+    width = 0.2,
+    color = "black",
+    size = 0.6
+  ) +
+  geom_text(
+    aes(label = sprintf("%.2f", mean_f1), y = mean_f1 + 0.06),
+    size = 3.5
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "F1 Score",
+    title = "F1 Score per Run (Mean with Range)"
+  ) +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Training - Top 5 Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## Test Summary
+
+```{r}
+test <- read.csv('RF_summaries/Combined_Top5_Test.csv', header=TRUE)
+
+test_scores <- test |> select(run, test_f1)
+
+test_scores_unique <- test_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+test <- test %>%
+  select(-test_f1, -run) %>%
+  mutate(
+    # Recode first, then convert to factor
+    max_features = case_when(
+      max_features == "1" ~ "0.5",
+      max_features == "2" ~ "sqrt",
+      max_features == "3" ~ "log2",
+      TRUE ~ as.character(max_features)  # <-- required fallback
+    ),
+    criterion = case_when(
+      criterion == "1" ~ "gini",
+      criterion == "2" ~ "entropy",
+      TRUE ~ as.character(criterion)
+    )
+  ) %>%
+  mutate(across(everything(), as.factor)) 
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+test_scores_grouped <- test_scores %>%
+  group_by(run) %>%
+  mutate(instance = row_number()) %>%
+  ungroup()
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(test, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+test_summary <- test_scores_grouped %>%
+  group_by(run) %>%
+  summarise(
+    min_f1 = min(test_f1, na.rm = TRUE),
+    max_f1 = max(test_f1, na.rm = TRUE),
+    mean_f1 = mean(test_f1, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+plot_f1 <- ggplot(test_summary, aes(x = factor(run), y = mean_f1)) +
+  geom_col(fill = "steelblue", width = 0.6) +
+  geom_errorbar(
+    aes(ymin = min_f1, ymax = max_f1),
+    width = 0.2,
+    color = "black",
+    size = 0.6
+  ) +
+  geom_text(
+    aes(label = sprintf("%.2f", mean_f1), y = mean_f1 + 0.06),
+    size = 3.5
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "F1 Score",
+    title = "F1 Score per Run (Mean with Range)"
+  ) +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Test - Top 5 Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## Validation Summary
+
+```{r}
+val <- read.csv('RF_summaries/Combined_Top5_Validation.csv', header=TRUE)
+
+val_scores <- val |> select(run, val_f1)
+
+val_scores_unique <- val_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+val <- val %>%
+  select(-val_f1, -run) %>%
+  mutate(
+    # Recode first, then convert to factor
+    max_features = case_when(
+      max_features == "1" ~ "0.5",
+      max_features == "2" ~ "sqrt",
+      max_features == "3" ~ "log2",
+      TRUE ~ as.character(max_features)  # <-- required fallback
+    ),
+    criterion = case_when(
+      criterion == "1" ~ "gini",
+      criterion == "2" ~ "entropy",
+      TRUE ~ as.character(criterion)
+    )
+  ) %>%
+  mutate(across(everything(), as.factor)) 
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+val_scores_grouped <- val_scores %>%
+  group_by(run) %>%
+  mutate(instance = row_number()) %>%
+  ungroup()
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(val, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+val_summary <- val_scores_grouped %>%
+  group_by(run) %>%
+  summarise(
+    min_f1 = min(val_f1, na.rm = TRUE),
+    max_f1 = max(val_f1, na.rm = TRUE),
+    mean_f1 = mean(val_f1, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+plot_f1 <- ggplot(val_summary, aes(x = factor(run), y = mean_f1)) +
+  geom_col(fill = "steelblue", width = 0.6) +
+  geom_errorbar(
+    aes(ymin = min_f1, ymax = max_f1),
+    width = 0.2,
+    color = "black",
+    size = 0.6
+  ) +
+  geom_text(
+    aes(label = sprintf("%.2f", mean_f1), y = mean_f1 + 0.06),
+    size = 3.5
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "F1 Score",
+    title = "F1 Score per Run (Mean with Range)"
+  ) +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Validation - Top 5 Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## All Datasets Summary
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- bind_rows(list(train, test, val))
+
+all <- all %>%
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(50, 100, 500, 1000, 1500)),
+    max_depth = factor(max_depth, levels = c(3, 7, 12, 20, 50, 100)),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(20, 50, 100, 200, 500)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 5, 10, 20, 50))
+  )
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# --- Step 4: F1 Score Plot ---
+# combined_scores <- train_scores_unique %>%
+#   left_join(test_scores_unique, by = "run") %>%
+#   left_join(val_scores_unique, by = "run")
+
+combined_scores <- train_scores %>%
+  left_join(test_scores, by = "run") %>%
+  left_join(val_scores, by = "run")
+
+scores_long <- combined_scores %>%
+  pivot_longer(cols = -run, names_to = "set", values_to = "f1")
+
+# Summarize mean, min, and max F1 scores
+summary_scores <- scores_long %>%
+  group_by(run, set) %>%
+  summarise(
+    mean_f1 = mean(f1, na.rm = TRUE),
+    ymin = min(f1, na.rm = TRUE),
+    ymax = max(f1, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Final plot with bars, error bars, and mean labels
+plot_f1 <- ggplot(summary_scores, aes(x = factor(run), y = mean_f1, fill = set)) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6,
+    # color = 'black',
+    stat = "identity"
+  ) +
+  geom_errorbar(
+    data = summary_scores,
+    aes(x = factor(run), ymin = ymin, ymax = ymax, group = set),
+    position = position_dodge(width = 0.7),
+    width = 0.25,
+    size = 0.75,
+    color = "black",
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = summary_scores,
+    aes(x = factor(run), y = ymax + 0.06, label = sprintf("%.2f", mean_f1), group = set),
+    position = position_dodge(width = 0.7),
+    size = 3,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = c("cv_f1" = "#1f77b4", "test_f1" = "#2ca02c", "val_f1" = "#ff7f0e")) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "F1 Score",
+    title = "Mean F1 Scores and Range",
+    fill = "Score Type"
+  ) +
+  coord_cartesian(ylim = c(0, 0.75))
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1)) +
+  plot_annotation(
+    title = "All Datasets – Top Models",
+  )
+
+final_plot
+```
+
+## Validation and Test Summary
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- bind_rows(list(test, val))
+
+all <- all %>%
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(50, 100, 500, 1000, 1500)),
+    max_depth = factor(max_depth, levels = c(3, 7, 12, 20, 50, 100)),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(20, 50, 100, 200, 500)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 5, 10, 20, 50))
+  )
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# --- Step 4: F1 Score Plot ---
+combined_scores <- test_scores %>%
+  left_join(val_scores, by = "run")
+
+scores_long <- combined_scores %>%
+  pivot_longer(cols = -run, names_to = "set", values_to = "f1")
+
+# Summarize mean, min, and max F1 scores
+summary_scores <- scores_long %>%
+  group_by(run, set) %>%
+  summarise(
+    mean_f1 = mean(f1, na.rm = TRUE),
+    ymin = min(f1, na.rm = TRUE),
+    ymax = max(f1, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Final plot with bars, error bars, and mean labels
+plot_f1 <- ggplot(summary_scores, aes(x = factor(run), y = mean_f1, fill = set)) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6,
+    # color = 'black',
+    stat = "identity"
+  ) +
+  geom_errorbar(
+    data = summary_scores,
+    aes(x = factor(run), ymin = ymin, ymax = ymax, group = set),
+    position = position_dodge(width = 0.7),
+    width = 0.25,
+    size = 0.75,
+    color = "black",
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = summary_scores,
+    aes(x = factor(run), y = ymax + 0.06, label = sprintf("%.2f", mean_f1), group = set),
+    position = position_dodge(width = 0.7),
+    size = 3,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = c("cv_f1" = "#1f77b4", "test_f1" = "#2ca02c", "val_f1" = "#ff7f0e")) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "F1 Score",
+    title = "Mean F1 Scores and Range",
+    fill = "Score Type"
+  ) +
+  coord_cartesian(ylim = c(0, 0.75))
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1)) +
+  plot_annotation(
+    title = "All Datasets – Top Models",
+  )
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1)) +
+  plot_annotation(
+    title = "All Datasets – Top Models",
+  )
+
+final_plot
+```
+
+## Upset Plot
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Step 1: Filter and add a unique row ID for each model
+filtered <- all %>%
+  select(
+    n_estimators,
+    max_depth,
+    min_samples_split,
+    min_samples_leaf,
+    criterion,
+    max_features
+  ) %>%
+  filter(
+    criterion == "entropy",
+    max_features == 0.5
+  ) %>%
+  select(-criterion, -max_features) %>%
+  mutate(row_id = row_number())  # Add unique row ID
+
+# Step 2: Convert to long format and flag presence
+filtered_long <- filtered %>%
+  pivot_longer(cols = -row_id, names_to = "param", values_to = "value") %>%
+  mutate(present = TRUE) %>%
+  unite("feature", param, value, sep = "_")
+
+# Step 3: Convert to binary wide format
+binary_data <- filtered_long %>%
+  pivot_wider(
+    id_cols = row_id,
+    names_from = feature,
+    values_from = present,
+    values_fill = list(present = FALSE)
+  ) %>%
+  select(-row_id)
+
+# Step 4: Make the upset plot
+upset(
+  binary_data,
+  intersect = colnames(binary_data),
+  name = "Hyperparameter Combination",
+  height_ratio = 1.3
+)
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Step 1: Filter and add a unique row ID for each model
+filtered <- all %>%
+  select(
+    n_estimators,
+    max_depth,
+    min_samples_split,
+    min_samples_leaf,
+    criterion,
+    max_features
+  ) %>%
+  filter(
+    criterion == "entropy",
+    max_features == 0.5
+  ) %>%
+  select(-criterion, -max_features) %>%
+  mutate(row_id = row_number())  # Add unique row ID
+
+# Step 2: Convert to long format and flag presence
+filtered_long <- filtered %>%
+  pivot_longer(cols = -row_id, names_to = "param", values_to = "value") %>%
+  mutate(present = TRUE) %>%
+  unite("feature", param, value, sep = "_")
+
+# Step 3: Convert to binary wide format
+binary_data <- filtered_long %>%
+  pivot_wider(
+    id_cols = row_id,
+    names_from = feature,
+    values_from = present,
+    values_fill = list(present = FALSE)
+  ) %>%
+  select(-row_id)
+
+# Step 4: Make the upset plot
+upset(
+  binary_data,
+  intersect = colnames(binary_data),
+  name = "Hyperparameter Combination",
+  height_ratio = 1.3,
+  min_size = 2
+)
+```
+
+I chose the right-most combination because it contains more hyperparameter values that were chosen more often by good models.
