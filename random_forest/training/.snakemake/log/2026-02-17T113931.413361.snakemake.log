@@ -1,0 +1,6 @@
+Building DAG of jobs...
+MissingInputException in rule rf_feature_importance in file /scratch.global/dimml002/Genomic_Prediction_RF_GB/random_forest/training/RF_final_training.smk, line 68:
+Missing input files for rule rf_feature_importance:
+    output: results/final_training/importance_scores.csv
+    affected files:
+        results/iteration1/inputs/modeling_input.txt

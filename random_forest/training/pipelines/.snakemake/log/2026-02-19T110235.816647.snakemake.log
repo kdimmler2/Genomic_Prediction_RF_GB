@@ -1,0 +1,6 @@
+Building DAG of jobs...
+MissingInputException in rule random_RF_grid_search in file /scratch.global/dimml002/Genomic_Prediction_RF_GB/random_forest/training/pipelines/RF_hyperparameter_tuning.smk, line 17:
+Missing input files for rule random_RF_grid_search:
+    output: ../results/hyperparameter_tuning/all_models.csv, ../results/hyperparameter_tuning/splits.npz
+    affected files:
+        ../../data_preprocessing/inputs/modeling_input.txt

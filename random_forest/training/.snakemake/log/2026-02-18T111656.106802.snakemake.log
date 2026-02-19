@@ -1,0 +1,22 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Job stats:
+job                      count    min threads    max threads
+---------------------  -------  -------------  -------------
+all                          1              1              1
+random_RF_grid_search        1              4              4
+total                        2              1              4
+
+Select jobs to execute...
+
+[Wed Feb 18 11:16:59 2026]
+rule random_RF_grid_search:
+    input: ../../data_preprocessing/inputs/modeling_input.txt
+    output: results/hyperparameter_tuning/all_models.csv, results/hyperparameter_tuning/splits.npz
+    jobid: 1
+    reason: Missing output files: results/hyperparameter_tuning/all_models.csv
+    threads: 4
+    resources: tmpdir=/tmp, time=360, mem_mb=12000, mem_mib=11445, nodes=1, cpus_per_task=4, ntasks=1
+

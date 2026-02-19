@@ -1,0 +1,37 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Job stats:
+job                            count    min threads    max threads
+---------------------------  -------  -------------  -------------
+all                                1              1              1
+rf_feature_importance              1              4              4
+rf_final_refit_all_internal        1              4              4
+total                              3              1              4
+
+Select jobs to execute...
+
+[Tue Feb 17 11:44:11 2026]
+rule rf_final_refit_all_internal:
+    input: ../../data_preprocessing/inputs/modeling_input.txt, results/hyperparameter_tuning/splits.npz
+    output: results/final_training/model_refit_ALL.pkl, results/final_training/refit_train_ids.tsv
+    jobid: 1
+    reason: Missing output files: results/final_training/model_refit_ALL.pkl
+    threads: 4
+    resources: tmpdir=/tmp
+
+[Tue Feb 17 11:44:16 2026]
+Finished job 1.
+1 of 3 steps (33%) done
+Select jobs to execute...
+
+[Tue Feb 17 11:44:17 2026]
+rule rf_feature_importance:
+    input: ../../data_preprocessing/inputs/modeling_input.txt
+    output: results/final_training/importance_scores.csv
+    jobid: 2
+    reason: Missing output files: results/final_training/importance_scores.csv
+    threads: 4
+    resources: tmpdir=/tmp, time=60, mem_mb=12000, mem_mib=11445, nodes=1, cpus_per_task=4, ntasks=1
+

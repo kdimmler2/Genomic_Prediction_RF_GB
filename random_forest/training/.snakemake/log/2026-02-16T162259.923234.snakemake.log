@@ -1,0 +1,38 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Job stats:
+job                      count    min threads    max threads
+---------------------  -------  -------------  -------------
+all                          1              1              1
+random_RF_grid_search        1              4              4
+total                        2              1              4
+
+Select jobs to execute...
+
+[Mon Feb 16 16:23:02 2026]
+rule random_RF_grid_search:
+    input: ../../data_preprocessing/inputs/modeling_input.txt
+    output: results/random_forest/all_models.csv, results/random_forest/splits.npz
+    jobid: 1
+    reason: Missing output files: results/random_forest/all_models.csv
+    threads: 4
+    resources: tmpdir=/tmp, time=360, mem_mb=12000, mem_mib=11445, nodes=1, cpus_per_task=4, ntasks=1
+
+[Mon Feb 16 16:23:54 2026]
+Finished job 1.
+1 of 2 steps (50%) done
+Select jobs to execute...
+
+[Mon Feb 16 16:23:54 2026]
+localrule all:
+    input: results/random_forest/all_models.csv
+    jobid: 0
+    reason: Input files updated by another job: results/random_forest/all_models.csv
+    resources: tmpdir=/tmp
+
+[Mon Feb 16 16:23:54 2026]
+Finished job 0.
+2 of 2 steps (100%) done
+Complete log: .snakemake/log/2026-02-16T162259.923234.snakemake.log

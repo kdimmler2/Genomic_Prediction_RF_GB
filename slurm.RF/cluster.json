@@ -19,19 +19,4 @@
 'output' : '.logs/{rule}/%j.{rule}.out',
 'error'  : '.logs/{rule}/%j.{rule}.err'
 },
-'random_forest' :
-{
-'output' : '.logs/{rule}/%j.{rule}.out',
-'error'  : '.logs/{rule}/%j.{rule}.err'
-},
-'top_80_features' :
-{
-'output' : '.logs/{rule}/%j.{rule}.out',
-'error'  : '.logs/{rule}/%j.{rule}.err'
-},
-'top_80_variants' :
-{
-'output' : '.logs/{rule}/%j.{rule}.out',
-'error'  : '.logs/{rule}/%j.{rule}.err'
-},
 }

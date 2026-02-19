@@ -1,0 +1,2 @@
+modeling_vcf: ../demo_data/training/chr1_ExtraSmall.vcf.gz 
+modeling_pheno_file: ../demo_data/training/training_phenos.txt

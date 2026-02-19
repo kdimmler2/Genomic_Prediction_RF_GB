@@ -1,0 +1,6 @@
+Building DAG of jobs...
+MissingInputException in rule rf_internal_test_fixed in file /scratch.global/dimml002/Genomic_Prediction_RF_GB/random_forest/training/RF_test_metrics.smk, line 5:
+Missing input files for rule rf_internal_test_fixed:
+    output: results/iteration1/random_forest/test_probs.tsv, results/iteration1/random_forest/test_metrics.tsv
+    affected files:
+        results/iteration1/inputs/modeling_input.txt

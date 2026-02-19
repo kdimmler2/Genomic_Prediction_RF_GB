@@ -1,0 +1,26 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Job stats:
+job                  count    min threads    max threads
+-----------------  -------  -------------  -------------
+all                      1              1              1
+rf_threshold_prep        1              4              4
+total                    2              1              4
+
+Select jobs to execute...
+
+[Mon Feb 16 17:05:23 2026]
+rule rf_threshold_prep:
+    input: ../../data_preprocessing/inputs/modeling_input.txt, results/iteration1/random_forest/splits.npz
+    output: results/random_forest/cal_probs.tsv, results/random_forest/cal_pr_curve.png, results/random_forest/cal_roc_curve.png, results/random_forest/threshold_table.tsv
+    jobid: 1
+    reason: Missing output files: results/random_forest/threshold_table.tsv
+    threads: 4
+    resources: tmpdir=/tmp, time=60, mem_mb=12000, mem_mib=11445, nodes=1, cpus_per_task=4, ntasks=1
+
+Removing output files of failed job rf_threshold_prep since they might be corrupted:
+results/random_forest/cal_probs.tsv, results/random_forest/cal_pr_curve.png, results/random_forest/cal_roc_curve.png, results/random_forest/threshold_table.tsv
+Exiting because a job execution failed. Look above for error message
+Complete log: .snakemake/log/2026-02-16T170519.244912.snakemake.log

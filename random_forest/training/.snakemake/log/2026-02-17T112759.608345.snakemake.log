@@ -1,0 +1,38 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Job stats:
+job                       count    min threads    max threads
+----------------------  -------  -------------  -------------
+all                           1              1              1
+rf_internal_test_fixed        1              4              4
+total                         2              1              4
+
+Select jobs to execute...
+
+[Tue Feb 17 11:28:04 2026]
+rule rf_internal_test_fixed:
+    input: ../../data_preprocessing/inputs/modeling_input.txt, results/hyperparameter_tuning/splits.npz
+    output: results/test_set_metrics/test_probs.tsv, results/test_set_metrics/test_metrics.tsv
+    jobid: 1
+    reason: Missing output files: results/test_set_metrics/test_probs.tsv
+    threads: 4
+    resources: tmpdir=/tmp
+
+[Tue Feb 17 11:28:11 2026]
+Finished job 1.
+1 of 2 steps (50%) done
+Select jobs to execute...
+
+[Tue Feb 17 11:28:11 2026]
+localrule all:
+    input: results/test_set_metrics/test_probs.tsv
+    jobid: 0
+    reason: Input files updated by another job: results/test_set_metrics/test_probs.tsv
+    resources: tmpdir=/tmp
+
+[Tue Feb 17 11:28:11 2026]
+Finished job 0.
+2 of 2 steps (100%) done
+Complete log: .snakemake/log/2026-02-17T112759.608345.snakemake.log

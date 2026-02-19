@@ -1,0 +1,24 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Job stats:
+job                       count    min threads    max threads
+----------------------  -------  -------------  -------------
+all                           1              1              1
+rf_internal_test_fixed        1              4              4
+total                         2              1              4
+
+Select jobs to execute...
+
+[Tue Feb 17 11:15:33 2026]
+rule rf_internal_test_fixed:
+    input: ../../data_preprocessing/inputs/modeling_input.txt, results/iteration1/random_forest/splits.npz
+    output: results/iteration1/random_forest/test_probs.tsv, results/iteration1/random_forest/test_metrics.tsv
+    jobid: 1
+    reason: Missing output files: results/iteration1/random_forest/test_probs.tsv
+    threads: 4
+    resources: tmpdir=/tmp
+
+Exiting because a job execution failed. Look above for error message
+Complete log: .snakemake/log/2026-02-17T111529.331453.snakemake.log
