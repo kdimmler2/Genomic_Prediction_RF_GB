@@ -19,17 +19,17 @@ from sklearn.metrics import (
 
 rule all:
     input:
-        'results/threshold_testing/threshold_table.tsv',
+        '../results/threshold_testing/threshold_table.tsv',
 
 rule rf_threshold_prep:
     input:
         modeling_input   = config['input_data'],
-        splits_npz       = 'results/hyperparameter_tuning/splits.npz'
+        splits_npz       = '../results/hyperparameter_tuning/splits.npz'
     output:
-        cal_probs_tsv      = 'results/threshold_testing/cal_probs.tsv',
-        cal_pr_png         = 'results/threshold_testing/cal_pr_curve.png',
-        cal_roc_png        = 'results/threshold_testing/cal_roc_curve.png',
-        threshold_table_tsv = 'results/threshold_testing/threshold_table.tsv'
+        cal_probs_tsv      = '../results/threshold_testing/cal_probs.tsv',
+        cal_pr_png         = '../results/threshold_testing/cal_pr_curve.png',
+        cal_roc_png        = '../results/threshold_testing/cal_roc_curve.png',
+        threshold_table_tsv = '../results/threshold_testing/threshold_table.tsv'
     resources:
         time=60,
         mem_mb=12000,
@@ -46,7 +46,7 @@ rule rf_threshold_prep:
         y = data['y']
 
         # ---- Load fixed splits + manually selected hyperparameters ----
-        # Hyperparameters were selected after inspecting CV results from the search step.
+        # Hyperparameters were selected after inspecting CV ../results from the search step.
         # Splits are reused to guarantee identical train/cal partitions across downstream rules.
         best_params = config['best_params']
 
