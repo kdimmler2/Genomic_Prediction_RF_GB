@@ -1,6 +1,0 @@
-Building DAG of jobs...
-MissingInputException in rule rf_final_refit_all_internal in file /scratch.global/dimml002/Genomic_Prediction_RF_GB/random_forest/training/RF_final_training.smk, line 15:
-Missing input files for rule rf_final_refit_all_internal:
-    output: results/final_training/model_refit_ALL.pkl, results/final_training/refit_train_ids.tsv
-    affected files:
-        results/iteration1/inputs/modeling_input.txt
