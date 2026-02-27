@@ -1,3 +1,4 @@
-.snakemake
+*.snakemake*
 *.nfs*
 testfile
+.done_rf

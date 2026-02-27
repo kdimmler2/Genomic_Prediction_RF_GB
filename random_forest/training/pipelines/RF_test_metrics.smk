@@ -15,19 +15,19 @@ from sklearn.metrics import (
 
 rule all:
     input:
-        '../results/test_set_metrics/test_probs.tsv',
+        'results/test_set_metrics/test_probs.tsv',
 
 rule rf_internal_test_fixed:
     threads: 4
     input:
         modeling_input = config['input_data'],
-        splits_npz     = '../results/hyperparameter_tuning/splits.npz'
+        splits_npz     = 'results/hyperparameter_tuning/splits.npz'
     output:
-        test_probs_tsv   = '../results/test_set_metrics/test_probs.tsv',
-        test_metrics_tsv = '../results/test_set_metrics/test_metrics.tsv'
+        test_probs_tsv   = 'results/test_set_metrics/test_probs.tsv',
+        test_metrics_tsv = 'results/test_set_metrics/test_metrics.tsv'
     run:
         # ---- Locked configuration (manual handoff) ----
-        # Hyperparameters are selected manually from the randomized search ../results
+        # Hyperparameters are selected manually from the randomized search results
         # (tradeoffs across AP/MCC/specificity, etc.) and defined in the config file
         best_params = config['best_params']
 

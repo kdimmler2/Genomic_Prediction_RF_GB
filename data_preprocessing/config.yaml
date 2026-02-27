@@ -1,2 +1,6 @@
-modeling_vcf: ../demo_data/training/chr1_ExtraSmall.vcf.gz 
-modeling_pheno_file: ../demo_data/training/training_phenos.txt
+training_vcf: ../demo_data/training/training_demo.vcf.gz 
+training_pheno_file: ../demo_data/training/training_phenos.txt
+training_table: training_data/modeling.table 
+
+validation_vcf: ../demo_data/validation/validation_demo.vcf.gz 
+validation_pheno_file: ../demo_data/validation/validation_phenos.txt

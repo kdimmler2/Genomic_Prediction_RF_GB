@@ -1,0 +1,9 @@
+f1: 0.6363636363636364
+Precision: 0.4666666666666667
+Recall: 1.0
+Average Precision: 0.4666666666666667
+AUC: 0.5
+Balanced Accuracy: 0.5
+Specificity: 0.0
+PPV: 0.4666666666666667
+NPV: nan

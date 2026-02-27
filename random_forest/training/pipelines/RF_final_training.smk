@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import pickle
+import joblib
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold
@@ -9,17 +9,17 @@ from sklearn.metrics import make_scorer, average_precision_score
 
 rule all:
     input:
-        '../results/final_training/model_refit_ALL.pkl',
-        '../results/final_training/importance_scores.csv'
+        'results/final_training/model_refit_ALL.pkl',
+        'results/final_training/importance_scores.csv'
 
 rule rf_final_refit_all_internal:
     threads: 4
     input:
         modeling_input = config['input_data'],
-        splits_npz     = '../results/hyperparameter_tuning/splits.npz'
+        splits_npz     = 'results/hyperparameter_tuning/splits.npz'
     output:
-        model_pkl      = '../results/final_training/model_refit_ALL.pkl',
-        refit_ids_tsv  = '../results/final_training/refit_train_ids.tsv'
+        model_pkl      = 'results/final_training/model_refit_ALL.pkl',
+        refit_ids_tsv  = 'results/final_training/refit_train_ids.tsv'
     run:
            # ---- Locked hyperparameters (no further tuning) ----
         # These were selected in the hyperparameter search step and stored in config.
@@ -59,7 +59,7 @@ rule rf_final_refit_all_internal:
         # The pickle represents the final trained classifier.
         # Saving the sample IDs ensures full reproducibility of what data were used.
         with open(output.model_pkl, 'wb') as f:
-            pickle.dump(model, f)
+            joblib.dump(model, f)
 
         pd.DataFrame({'sample': X_all.index}).to_csv(
             output.refit_ids_tsv, sep='\t', index=False
@@ -69,7 +69,7 @@ rule rf_feature_importance:
     input:
         modeling_input = config['input_data'] 
     output:
-        importance_scores = '../results/final_training/importance_scores.csv'
+        importance_scores = 'results/final_training/importance_scores.csv'
     resources:
         time=60,
         mem_mb=12000,

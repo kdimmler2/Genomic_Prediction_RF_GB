@@ -6,15 +6,15 @@ import pandas as pd
 
 rule all:
     input:
-        'inputs/modeling.table',
-        'inputs/raw_tables/',
-        'inputs/modeling_input.txt',
+        'training_data/modeling.table',
+        'training_data/raw_tables/',
+        'training_data/modeling_input.txt',
 
 rule gatk_table:
     input:
-        training_vcf = config['modeling_vcf'], 
+        training_vcf = config['training_vcf'], 
     output:
-        table = 'inputs/modeling.table', 
+        table = 'training_data/modeling.table', 
     resources:
         time    = 60,
         mem_mb  = 6000,
@@ -34,9 +34,9 @@ rule gatk_table:
 
 checkpoint split_table:
     input:
-        table = 'inputs/modeling.table',
+        table = 'training_data/modeling.table',
     output:
-        split_tables = directory('inputs/raw_tables/'),
+        split_tables = directory('training_data/raw_tables/'),
     resources:
         time    = 10,
         mem_mb  = 12000,
@@ -74,18 +74,18 @@ checkpoint split_table:
                             out.write(header)
 
         input_file = input.table
-        output_dir = 'inputs/raw_tables'
+        output_dir = 'training_data/raw_tables'
         lines_per_file = 1000  # tuned for small, fast chunks (adjust based on table size / IO)
         split_file_by_lines(input_file, output_dir, lines_per_file)
 
 
 rule convert_tables:
     input:
-        table = 'inputs/raw_tables/part_{num}.txt'
+        table = 'training_data/raw_tables/part_{num}.txt'
     output:
-        converted_table = 'inputs/converted_tables/part_{num}.txt',
+        converted_table = 'training_data/converted_tables/part_{num}.txt',
     params:
-        phenofile = config['modeling_pheno_file'], 
+        phenofile = config['training_pheno_file'], 
     resources:
         time    = 30,
         mem_mb  = 12000,
@@ -189,7 +189,7 @@ def get_file_nums(wildcards):
 
     # Return corresponding converted output targets for each discovered part
     return sorted(expand(
-        'inputs/converted_tables/part_{num}.txt',
+        'training_data/converted_tables/part_{num}.txt',
         num=PARTS
     ))
  
@@ -197,9 +197,9 @@ rule combine_tables:
     input:
         tables = get_file_nums,
     output:
-        modeling_input = 'inputs/modeling_input.txt',
+        modeling_input = 'training_data/modeling_input.txt',
     params:
-        directory = 'inputs/converted_tables/',
+        directory = 'training_data/converted_tables/',
     resources:
         time    = 120,
         mem_mb  = 12000,

@@ -1,4 +1,4 @@
-input_data: ../../../data_preprocessing/inputs/modeling_input.txt
+input_data: ../../data_preprocessing/training_data/modeling_input.txt
 
 best_params:
   n_estimators: 1000

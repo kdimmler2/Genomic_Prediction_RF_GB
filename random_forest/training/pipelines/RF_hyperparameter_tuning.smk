@@ -12,14 +12,14 @@ from sklearn.metrics import (
 
 rule all:
     input:
-        '../results/hyperparameter_tuning/all_models.csv',
+        'results/hyperparameter_tuning/all_models.csv',
 
 rule random_RF_grid_search:
     input:
         modeling_input = config['input_data'],
     output:
-        all_models       = '../results/hyperparameter_tuning/all_models.csv',
-        splits_npz       = '../results/hyperparameter_tuning/splits.npz'
+        all_models       = 'results/hyperparameter_tuning/all_models.csv',
+        splits_npz       = 'results/hyperparameter_tuning/splits.npz'
     resources:
         time=360,
         mem_mb=8000,
@@ -116,7 +116,7 @@ rule random_RF_grid_search:
         # Test and evaluation splits are reserved for downstream evaluation steps.
         random_search.fit(X_train, y_train)
 
-        # Flatten cv_../results_ into a long table so we can inspect tradeoffs and stability
+        # Flatten cv_results_ into a long table so we can inspect tradeoffs and stability
         # across metrics (mean/std across folds) for each sampled configuration.
         all_results = random_search.cv_results_
         all_model_performance = []
@@ -164,7 +164,7 @@ rule random_RF_grid_search:
 
             all_model_performance.append(row)
 
-        # Save full search ../results so we can reproduce/inspect the hyperparameter landscape
+        # Save full search results so we can reproduce/inspect the hyperparameter landscape
         all_performance_df = pd.DataFrame(all_model_performance)
         all_performance_df.to_csv(output.all_models, index=False)
 
