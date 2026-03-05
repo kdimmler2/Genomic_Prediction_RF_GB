@@ -1,0 +1,39 @@
+snakemake -s data_preprocessing.smk \
+    --cores 4 \
+    --printshellcmds \
+    --rerun-incomplete \
+    --configfile config.yaml \
+    --keep-going \
+    --rerun-triggers mtime
+
+snakemake -s GB_hyperparameter_tuning.smk \
+    --cores 4 \
+    --printshellcmds \
+    --rerun-incomplete \
+    --configfile config.yaml \
+    --keep-going \
+    --rerun-triggers mtime
+    
+snakemake -s GB_threshold_tuning.smk \
+    --cores 4 \
+    --printshellcmds \
+    --rerun-incomplete \
+    --configfile config.yaml \
+    --keep-going \
+    --rerun-triggers mtime
+    
+snakemake -s GB_test_metrics.smk \
+    --cores 4 \
+    --printshellcmds \
+    --rerun-incomplete \
+    --configfile config.yaml \
+    --keep-going \
+    --rerun-triggers mtime
+    
+snakemake -s GB_final_training.smk \
+    --cores 4 \
+    --printshellcmds \
+    --rerun-incomplete \
+    --configfile config.yaml \
+    --keep-going \
+    --rerun-triggers mtime

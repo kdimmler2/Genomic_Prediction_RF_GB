@@ -1,0 +1,4 @@
+validation_vcf: ../../demo_data/validation/validation_demo.vcf.gz
+validation_table: ../../data_preprocessing/validation_data/modeling_input.txt 
+validation_pheno_file: ../../demo_data/validation/validation_phenos.txt
+gradient_boosting_forest: ../training/results/final_training/model_refit_ALL.pkl

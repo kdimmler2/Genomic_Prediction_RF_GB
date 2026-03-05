@@ -1,0 +1,17 @@
+input_data: ../../data_preprocessing/training_data/modeling_input.txt
+
+best_params:
+  learning_rate: 0.10
+  max_iter: 400
+  max_depth: 2
+  max_leaf_nodes: 31
+  min_samples_leaf: 2
+  l2_regularization: 0.1
+  max_bins: 16
+  early_stopping: True
+  n_iter_no_change: 30
+  validation_fraction: 0.15
+
+chosen_threshold: 0.60
+seed: 874216
+
