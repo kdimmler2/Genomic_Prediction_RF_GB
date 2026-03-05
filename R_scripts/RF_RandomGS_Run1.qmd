@@ -1,0 +1,816 @@
+---
+title: "Random Forest - Randomizes Grid Search Run #1"
+author: "Kirsten Dimmler"
+format:
+  html:
+    toc: true
+    number-sections: true
+    self-contained: true
+execute:
+  echo: true
+  warning: false
+  message: false
+editor: visual
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(GGally)
+library(purrr)
+library(knitr)
+library(kableExtra)
+library(gt)
+library(patchwork)
+```
+
+# Random Forest Run 1
+
+## Read in the data and prep dataframe for plotting
+
+```{r}
+df <- read_csv('results/iteration1/random_forest/all_models.csv')
+
+#lambda <- 0.7  # or whatever value you're using
+#df$balanced_score <- pmin(df$cv_ap, df$cv_ap) - lambda * abs(df$cv_ap - df$cv_ap)
+
+df_parallel <- df %>%
+  mutate(
+    max_depth = ifelse(is.na(max_depth), "None", as.character(max_depth)),
+    max_depth = as.numeric(factor(max_depth, levels = c("10", "12", "16", "20", "None"))),
+    max_features = as.numeric(factor(max_features, levels = c("0.3", "0.5", "sqrt", "log2"))),
+    criterion = as.numeric(factor(criterion, levels = c("gini", "entropy"))),
+    n_estimators = as.numeric(n_estimators),
+    min_samples_split = as.numeric(min_samples_split),
+    min_samples_leaf = as.numeric(min_samples_leaf)
+  )
+```
+
+```{r}
+# df_filtered <- df |>
+#   filter(cv_ap != 0 & cv_ap != 0)
+# 
+# df_filtered |>
+#   summarize(
+#     test_median = median(cv_ap),
+#     Q1_test = quantile(cv_ap, 0.25),
+#     Q3_test = quantile(cv_ap, 0.75),
+#     test_IQR = IQR(cv_ap),
+#     test_min = min(cv_ap),
+#     test_max = max(cv_ap),
+#     val_median = median(cv_ap),
+#     Q1_val = quantile(cv_ap, 0.25),
+#     Q3_val = quantile(cv_ap, 0.75),
+#     train_IQR = IQR(cv_ap),
+#     train_min = min(cv_ap),
+#     train_max = max(cv_ap)
+#   )
+# 
+# p1 <- ggplot(df_filtered, aes(x = "", y = cv_ap)) +
+#   geom_boxplot(fill = 'skyblue') +
+#   labs(x = "Train", y = "Average Precision") +
+#   theme_minimal()
+#   # ylim(0, 0.45)
+# 
+# p2 <- ggplot(df_filtered, aes(x = "", y = cv_ap)) +
+#   geom_boxplot(fill = 'darkorange') +
+#   labs(x = "Test", y = "Average Precision") +
+#   theme_minimal()
+#   #ylim(0, 0.45) +
+#   # theme(
+#   #   axis.title.y = element_blank(),      # Remove y-axis label
+#   #   axis.text.y = element_blank(),       # Remove y-axis text
+#   #   axis.ticks.y = element_blank()       # Remove y-axis ticks
+#   # )
+# 
+# plot <- p1 + p2
+# 
+# plot
+
+# ggsave(
+#   filename = "final_plots/RF_mcc_dist.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+#   plot = plot,          # Or specify a plot object, e.g., plot = p
+#   device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+#   path = NULL,                 # Optional: directory to save file in
+#   scale = 1,                   # Scaling factor
+#   width = 6,                   # Width in units
+#   height = 4,                  # Height in units
+#   units = "in",                # Units: "in", "cm", "mm"
+#   dpi = 300,                   # Dots per inch (resolution)
+#   limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+# )
+```
+
+## Get scaling map
+
+```{r}
+# Assuming df_parallel has your hyperparameters
+hyperparams <- df_parallel %>%
+  select(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, criterion)
+
+make_scale_map <- function(param_vector, param_name) {
+  values <- unique(param_vector)
+  tibble(
+    parameter = param_name,
+    original = values,
+    scaled = (values - mean(param_vector, na.rm = TRUE)) / sd(param_vector, na.rm = TRUE)
+  )
+}
+
+scale_maps <- map2_dfr(hyperparams, names(hyperparams), make_scale_map)
+```
+
+```{r}
+gt_tbl <- scale_maps %>%
+  gt() %>%
+  fmt_number(
+    columns = 2,       # Second column (no decimals)
+    decimals = 0
+  ) %>%
+  fmt_number(
+    columns = -2,      # All columns except 2 (3 decimals)
+    decimals = 3
+  ) %>%
+  tab_caption("Scaling Map") %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  )
+
+gt_tbl
+
+# Save as PNG
+gtsave(gt_tbl, "final_plots/scaling_map.png")   # Can also use .pdf or .html
+```
+
+::: {.callout-note collapse="true"}
+## Scaling Map for Hyperparameters
+
+```{r}
+kable(scale_maps, digits = 3, caption = "Scaling Map") %>%
+  kableExtra::kable_styling(full_width = FALSE)
+```
+:::
+
+## All Models
+
+```{r}
+### CV
+
+mid <- (min(df_parallel$cv_ap) + max(df_parallel$cv_ap)) / 2
+max <- max(df_parallel$cv_ap)
+min <- min(df_parallel$cv_ap)
+
+ggparcoord(
+  df_parallel,
+  columns = 1:6,            # select the hyperparameter columns
+  groupColumn = 8,          # color by test_mcc
+  scale = "std",      # normalize values from 0 to 1
+  alpha = 0.5
+) +
+scale_color_gradient2(
+  low = "royalblue",
+  mid = "#dddddd",
+  high = "darkorange",
+  midpoint = mid,
+  limits = c(min, max)  # 👈 force full range of MCC Score
+) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    title = "Parallel Coordinates Plot of Hyperparameter Combinations - Training",
+    x = "Hyperparameters", y = "Scaled Value", color = "Average Precision"
+  )
+
+ggsave(
+  filename = "plots/RF1_CV_AP_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 4,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+
+# ### Test
+# 
+# mid <- (min(df_parallel$cv_ap) + max(df_parallel$cv_ap)) / 2
+# max <- max(df_parallel$cv_ap)
+# min <- min(df_parallel$cv_ap)
+# 
+# ggparcoord(
+#   df_parallel,
+#   columns = 26:31,            # select the hyperparameter columns
+#   groupColumn = 17,          # color by test_mcc
+#   scale = "std",      # normalize values from 0 to 1
+#   alpha = 0.6
+# ) +
+# scale_color_gradient2(
+#   low = "royalblue",
+#   mid = "white",
+#   high = "darkorange",
+#   midpoint = mid,
+#   limits = c(min, max)  # 👈 force full range of MCC Score
+# ) +
+#   theme_minimal() +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1)
+#   ) +
+#   labs(
+#     x = "Hyperparameters", y = "Scaled Value", color = "MCC"
+#   )
+# 
+# ggsave(
+#   filename = "final_plots/RF_test_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+#   plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+#   device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+#   path = NULL,                 # Optional: directory to save file in
+#   scale = 1,                   # Scaling factor
+#   width = 6,                   # Width in units
+#   height = 4,                  # Height in units
+#   units = "in",                # Units: "in", "cm", "mm"
+#   dpi = 300,                   # Dots per inch (resolution)
+#   limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+# )
+# 
+# ### Validation
+# 
+# mid = (min(df_parallel$cv_ap) + max(df_parallel$cv_ap)) / 2
+# min = min(df$cv_ap)
+# max = max(df$cv_ap)
+# 
+# ggparcoord(
+#   df_parallel,
+#   columns = 26:31,            # select the hyperparameter columns
+#   groupColumn = 17,          # color by test_mcc
+#   scale = "std",      # normalize values from 0 to 1
+#   alpha = 0.6
+# ) +
+# scale_color_gradient2(
+#   low = "royalblue",
+#   mid = "white",
+#   high = "darkorange",
+#   midpoint = mid,
+#   limits = c(min, max)  # 👈 force full range of MCC Score
+# ) +
+#   theme_minimal() +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1)
+#   ) +
+#   labs(
+#     x = "Hyperparameters", y = "Scaled Value", color = "MCC"
+#   )
+# 
+# ggsave(
+#   filename = "final_plots/RF_val_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+#   plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+#   device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+#   path = NULL,                 # Optional: directory to save file in
+#   scale = 1,                   # Scaling factor
+#   width = 6,                   # Width in units
+#   height = 4,                  # Height in units
+#   units = "in",                # Units: "in", "cm", "mm"
+#   dpi = 300,                   # Dots per inch (resolution)
+#   limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+# )
+```
+
+## All Models, following filtering for poor balanced scores
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: true
+cutoff1 <- quantile(df$mean_test_mcc, 0.95, na.rm = TRUE)
+
+ggplot(df, aes(x = balanced_score)) +
+  geom_histogram(fill = "skyblue", color = "black") +
+  geom_vline(xintercept = cutoff1, linetype = "dashed", color = "red", size = 1) +
+  theme_minimal() +
+  labs(x = 'Balanced Score',
+       y = 'Count')
+
+df$diff <- abs(df$mean_test_mcc - df$cv_ap)
+
+
+df_filtered <- df %>% filter(!(diff == 0 & balanced_score == 0))
+r <- cor(df_filtered$diff, df_filtered$balanced_score, method = "pearson")
+p <- cor.test(df_filtered$diff, df_filtered$balanced_score, method = "pearson")
+
+ggplot(df_filtered, aes(x = balanced_score, y = diff)) +
+  geom_point() +
+  theme_minimal() +
+  labs(x = 'Balanced Score',
+       y = 'Difference') +
+    annotate("text", x = -Inf, y = -Inf,
+           label = paste0("r = ", round(r, 2), 
+                          "\np = ", signif(p$p.value, 3)),
+           hjust = 0, vjust = -0.5, size = 5, color = "black") +
+    geom_vline(xintercept = cutoff1, linetype = "dashed", color = "red", size = 1)
+
+ggsave(
+  filename = "final_plots/RF_balanced_score_diff.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 4,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+
+df_parallel <- df_parallel %>%
+  filter(mean_test_mcc >= quantile(mean_test_mcc, 0.95, na.rm = TRUE))
+```
+
+### Get Scaling Map
+
+```{r}
+# Assuming df_parallel has your hyperparameters
+hyperparams <- df_parallel %>%
+  select(n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, criterion)
+
+make_scale_map <- function(param_vector, param_name) {
+  values <- unique(param_vector)
+  tibble(
+    parameter = param_name,
+    original = values,
+    scaled = (values - mean(param_vector, na.rm = TRUE)) / sd(param_vector, na.rm = TRUE)
+  )
+}
+
+scale_maps <- map2_dfr(hyperparams, names(hyperparams), make_scale_map)
+```
+
+::: {.callout-note collapse="true"}
+## Scaling Map for Hyperparameters
+
+```{r}
+kable(scale_maps, digits = 3, caption = "Scaling Map") %>%
+  kableExtra::kable_styling(full_width = FALSE)
+```
+:::
+
+```{r}
+### Training
+
+mid <- (min(df_parallel$cv_ap) + max(df_parallel$cv_ap)) / 2
+max <- max(df_parallel$cv_ap)
+min <- min(df_parallel$cv_ap)
+
+ggparcoord(
+  df_parallel,
+  columns = 26:31,            # select the hyperparameter columns
+  groupColumn = 17,          # color by test_mcc
+  scale = "std",      # normalize values from 0 to 1
+  alpha = 0.3
+) +
+scale_color_gradient2(
+  low = "royalblue",
+  mid = "white",
+  high = "darkorange",
+  midpoint = mid,
+  limits = c(min, max)  # 👈 force full range of MCC Score
+) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    title = "Parallel Coordinates Plot of Hyperparameter Combinations - Training",
+    x = "Hyperparameters", y = "Scaled Value", color = "MCC Score"
+  )
+
+ggsave(
+  filename = "plots/RF1_BSfilter_TrainingF1_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 4,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+
+### Test
+
+mid <- (min(df_parallel$cv_ap) + max(df_parallel$cv_ap)) / 2
+max <- max(df_parallel$cv_ap)
+min <- min(df_parallel$cv_ap)
+
+ggparcoord(
+  df_parallel,
+  columns = 26:31,            # select the hyperparameter columns
+  groupColumn = 1,          # color by test_mcc
+  scale = "std",      # normalize values from 0 to 1
+  alpha = 0.6
+) +
+scale_color_gradient2(
+  low = "royalblue",
+  mid = "white",
+  high = "darkorange",
+  midpoint = mid,
+  limits = c(min, max)  # 👈 force full range of MCC Score
+) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    x = "Hyperparameters", y = "Scaled Value", color = "AP"
+  )
+
+ggsave(
+  filename = "final_plots/RF_filtered_test_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 4,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+
+### Validation
+
+mid = (min(df_parallel$cv_ap) + max(df_parallel$cv_ap)) / 2
+min = min(df_parallel$cv_ap)
+max = max(df_parallel$cv_ap)
+
+ggparcoord(
+  df_parallel,
+  columns = 1:6,            # select the hyperparameter columns
+  groupColumn = 24,          # color by test_mcc
+  scale = "std",      # normalize values from 0 to 1
+  alpha = 0.6
+) +
+scale_color_gradient2(
+  low = "royalblue",
+  mid = "white",
+  high = "darkorange",
+  midpoint = mid,
+  limits = c(min, max)  # 👈 force full range of MCC Score
+) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    x = "Hyperparameters", y = "Scaled Value", color = "AP"
+  )
+
+ggsave(
+  filename = "final_plots/RF_filtered_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 4,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+
+#write_csv(df_parallel, 'final_plots/RF_top_models.csv')
+```
+
+```{r}
+depth_lvls <- c("10","12","16","20","None")
+feat_lvls  <- c("0.3","0.5","sqrt","log2")
+crit_lvls  <- c("gini","entropy")
+
+df_parallel <- df_parallel %>%
+  mutate(
+    criterion    = factor(criterion,    levels = 1:2, labels = crit_lvls),
+    max_features = factor(max_features, levels = 1:4, labels = feat_lvls),
+    max_depth    = factor(max_depth,    levels = 1:5, labels = depth_lvls)
+  )
+
+#write_csv(df_parallel, 'final_plots/RF_top_models_run1.csv')
+```
+
+## Top 5 Models
+
+```{r}
+### Training
+
+ obs <- length(df_parallel$n_estimators)
+
+ quant <- (100 - (100*(25/obs)))/100
+
+ df_plot <- df_parallel %>%
+   mutate(model_group = ifelse(cv_ap >= quantile(cv_ap, quant), "Top", "Other")) %>%
+   arrange(model_group)  # ensures "Other" comes first, "Top" comes last
+
+ train <- df_plot |> filter(model_group == 'Top')
+
+ # train$run <- 1
+
+ write_csv(train, 'final_plots/RF1_Top5_CV.csv')
+
+ ggparcoord(
+   df_plot,
+   columns = 1:6,
+   groupColumn = "model_group",
+   scale = "std",
+   alpha = 1
+ ) +
+   scale_color_manual(values = c("Top" = "red", "Other" = "gray80")) +
+   theme_minimal() +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+   labs(title = "Top Five Models - Training",
+        x = "Hyperparameters", y = "Scaled Value", color = "Group")
+
+ ggsave(
+   filename = "plots/RF1_Top5_CV_AP_PC.png",       # File name (can be .png, .pdf, jpeg, etc.)
+   plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+   device = NULL,               # Auto-detects from file extension, or specify like "png" "pdf"
+   path = NULL,                 # Optional: directory to save file in
+   scale = 1,                   # Scaling factor
+   width = 6,                   # Width in units
+   height = 4,                  # Height in units
+   units = "in",                # Units: "in", "cm", "mm"
+   dpi = 300,                   # Dots per inch (resolution)
+   limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+ )
+
+# ### Test
+# 
+# df_plot <- df_parallel %>%
+#   mutate(model_group = ifelse(mean_test_mcc >= quantile(mean_test_mcc, quant), "Top", "Other")) %>%
+#   arrange(model_group)  # ensures "Other" comes first, "Top" comes last
+# 
+# test <- df_plot |> filter(model_group == 'Top')
+# 
+# test$run <- 1
+# 
+# library(dplyr)
+# 
+# test <- test %>%
+#   mutate(criterion = if_else(criterion == 1, "gini", as.character(criterion)),
+#          criterion = if_else(criterion == 2, "entropy", as.character(criterion)),
+#          max_features = if_else(max_features == 1, "0.5", as.character(max_features)),
+#          max_features = if_else(max_features == 2, "sqrt", as.character(max_features)),
+#          max_features = if_else(max_features == 3, "log2", as.character(max_features)))
+# 
+# write_csv(df_plot, 'final_plots/RF1_Top5_Test.csv')
+# 
+# ggparcoord(
+#   df_plot,
+#   columns = 1:6,
+#   groupColumn = "model_group",
+#   scale = "std",
+#   alpha = 1
+# ) +
+#   scale_color_manual(values = c("Top" = "red", "Other" = "gray80")) +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+#   labs(title = "Top Five Models - Test",
+#        x = "Hyperparameters", y = "Scaled Value", color = "Group")
+# 
+# ggsave(
+#   filename = "final_plots/RF1_Top5_TestMCC_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+#   plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+#   device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+#   path = NULL,                 # Optional: directory to save file in
+#   scale = 1,                   # Scaling factor
+#   width = 6,                   # Width in units
+#   height = 4,                  # Height in units
+#   units = "in",                # Units: "in", "cm", "mm"
+#   dpi = 300,                   # Dots per inch (resolution)
+#   limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+# )
+# 
+# ### Validation
+# 
+# df_plot <- df_parallel %>%
+#   mutate(model_group = ifelse(cv_ap >= quantile(cv_ap, quant), "Top", "Other")) %>%
+#   arrange(model_group)  # ensures "Other" comes first, "Top" comes last
+# 
+# val <- df_plot |> filter(model_group == 'Top')
+# 
+# val$run <- 1
+# 
+# val <- val %>%
+#   mutate(criterion = if_else(criterion == 1, "gini", as.character(criterion)),
+#          criterion = if_else(criterion == 2, "entropy", as.character(criterion)),
+#          max_features = if_else(max_features == 1, "0.5", as.character(max_features)),
+#          max_features = if_else(max_features == 2, "sqrt", as.character(max_features)),
+#          max_features = if_else(max_features == 3, "log2", as.character(max_features)))
+# 
+# write_csv(val, 'final_plots/RF1_Top5_Validation.csv')
+# 
+# ggparcoord(
+#   df_plot,
+#   columns = 1:6,
+#   groupColumn = "model_group",
+#   scale = "std",
+#   alpha = 1
+# ) +
+#   scale_color_manual(values = c("Top" = "red", "Other" = "gray80")) +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+#   labs(title = "Top Five Models - Validation",
+#        x = "Hyperparameters", y = "Scaled Value", color = "Group")
+# 
+# ggsave(
+#   filename = "final_plots/RF1_Top5_ValidationMCC_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+#   plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+#   device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+#   path = NULL,                 # Optional: directory to save file in
+#   scale = 1,                   # Scaling factor
+#   width = 6,                   # Width in units
+#   height = 4,                  # Height in units
+#   units = "in",                # Units: "in", "cm", "mm"
+#   dpi = 300,                   # Dots per inch (resolution)
+#   limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+# )
+
+```
+
+## Top Model
+
+```{r}
+# ### Training
+# 
+# # 1. Identify the best model
+# best_model <- df_parallel %>%
+#   filter(cv_ap == max(cv_ap, na.rm = TRUE)) %>%
+#   mutate(model_group = "Best")
+# 
+# train <- best_model
+# 
+# train$run <- 1
+# 
+# write_csv(train, '../RF_summaries2/RF1_TopModel_Training.csv')
+# 
+# kable(best_model, digits = 3, caption = "Best Training Model") %>%
+#   kableExtra::kable_styling(full_width = FALSE)
+# 
+# # 2. Tag others and combine
+# df_plot <- df_parallel %>%
+#   filter(cv_ap != max(cv_ap, na.rm = TRUE)) %>%
+#   mutate(model_group = "Other") %>%
+#   bind_rows(best_model) %>%
+#   mutate(model_group = factor(model_group, levels = c("Other", "Best"))) %>%  # key line!
+#   arrange(model_group)  # Best is last, drawn on top
+# 
+# ggparcoord(
+#   df_plot,
+#   columns = 1:6,
+#   groupColumn = "model_group",
+#   scale = "std",
+#   alpha = 1
+# ) +
+#   scale_color_manual(values = c("Best" = "red", "Other" = "gray80")) +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+#   labs(
+#     title = "Top Model - Training",
+#     x = "Hyperparameters", y = "Scaled Value", color = "Model"
+#   )
+# 
+# ggsave(
+#   filename = "plots/RF1_Top1_TrainingF1_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+#   plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+#   device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+#   path = NULL,                 # Optional: directory to save file in
+#   scale = 1,                   # Scaling factor
+#   width = 6,                   # Width in units
+#   height = 4,                  # Height in units
+#   units = "in",                # Units: "in", "cm", "mm"
+#   dpi = 300,                   # Dots per inch (resolution)
+#   limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+# )
+
+### Test
+
+# 1. Identify the best model
+best_model <- df_parallel %>%
+  filter(test_mcc == max(test_mcc, na.rm = TRUE)) %>%
+  mutate(model_group = "Best")
+
+test <- best_model
+
+test$run <- 1
+
+test <- test %>%
+  mutate(criterion = if_else(criterion == 1, "gini", as.character(criterion)),
+         criterion = if_else(criterion == 2, "entropy", as.character(criterion)),
+         max_features = if_else(max_features == 1, "0.5", as.character(max_features)),
+         max_features = if_else(max_features == 2, "sqrt", as.character(max_features)),
+         max_features = if_else(max_features == 3, "log2", as.character(max_features)))
+
+write_csv(test, 'final_plots/RF_top_test.csv')
+
+kable(best_model, digits = 3, caption = "Best Test Model") %>%
+  kableExtra::kable_styling(full_width = FALSE)
+
+# 2. Tag others and combine
+df_plot <- df_parallel %>%
+  filter(test_mcc != max(test_mcc, na.rm = TRUE)) %>%
+  mutate(model_group = "Other") %>%
+  bind_rows(best_model) %>%
+  mutate(model_group = factor(model_group, levels = c("Other", "Best"))) %>%  # key line!
+  arrange(model_group)  # Best is last, drawn on top
+
+ggparcoord(
+  df_plot,
+  columns = 1:6,
+  groupColumn = "model_group",
+  scale = "std",
+  alpha = 1
+) +
+  scale_color_manual(values = c("Best" = "red", "Other" = "gray80")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Top Model - Validation",
+    x = "Hyperparameters", y = "Scaled Value", color = "Model"
+  )
+
+ggsave(
+  filename = "final_plots/RF1_top_test_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 4,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+
+### Validation
+
+# 1. Identify the best model
+best_model <- df_parallel %>%
+  filter(cv_ap == max(cv_ap, na.rm = TRUE)) %>%
+  mutate(model_group = "Best")
+
+val <- best_model
+
+val$run <- 1
+
+val <- val %>%
+  mutate(criterion = if_else(criterion == 1, "gini", as.character(criterion)),
+         criterion = if_else(criterion == 2, "entropy", as.character(criterion)),
+         max_features = if_else(max_features == 1, "0.5", as.character(max_features)),
+         max_features = if_else(max_features == 2, "sqrt", as.character(max_features)),
+         max_features = if_else(max_features == 3, "log2", as.character(max_features)))
+
+write_csv(val, 'final_plots/RF_top_val.csv')
+
+kable(best_model, digits = 3, caption = "Best Validation Model") %>%
+  kableExtra::kable_styling(full_width = FALSE)
+
+# 2. Tag others and combine
+df_plot <- df_parallel %>%
+  filter(cv_ap != max(cv_ap, na.rm = TRUE)) %>%
+  mutate(model_group = "Other") %>%
+  bind_rows(best_model) %>%
+  mutate(model_group = factor(model_group, levels = c("Other", "Best"))) %>%  # key line!
+  arrange(model_group)  # Best is last, drawn on top
+
+ggparcoord(
+  df_plot,
+  columns = 1:6,
+  groupColumn = "model_group",
+  scale = "std",
+  alpha = 1
+) +
+  scale_color_manual(values = c("Best" = "red", "Other" = "gray80")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Top Model - Validation",
+    x = "Hyperparameters", y = "Scaled Value", color = "Model"
+  )
+
+ggsave(
+  filename = "final_plots/RF1_top_val_PC.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 4,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+```

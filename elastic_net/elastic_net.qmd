@@ -1,0 +1,1728 @@
+---
+title: "Elastic Net"
+format: html
+editor: visual
+---
+
+```{r}
+library(glmnet)
+library(dplyr)
+library(pROC)
+library(PRROC)
+library(ModelMetrics)
+library(tidyverse)
+library(gt)
+```
+
+# STDB
+
+```{r}
+stdb_rf <- read_tsv('results/feature_selection/inputs/modeling_input.txt')
+stdb_gb <- read_tsv('../GB/tuning/results/feature_selection/inputs/modeling_input.txt')
+
+stdb_merged <- stdb_rf %>%
+  bind_cols(
+    stdb_gb %>% select(-any_of(names(stdb_rf)))
+  )
+
+df2 <- stdb_merged %>%
+  select(-sample)   # drop the sample ID
+
+# make sure y is numeric 0/1
+# if y is already 0/1 numeric, this is safe. 
+# if it's a factor with levels 0 and 1, this also works.
+df2$y <- as.numeric(df2$y)
+
+```
+
+```{r}
+# design matrix (all columns except y)
+x <- model.matrix(y ~ ., data = df2)[, -1]  # drop intercept column
+y_vec <- df2$y
+
+set.seed(123)
+
+cv_en <- cv.glmnet(
+  x      = x,
+  y      = y_vec,
+  family = "binomial",
+  alpha  = 0.5,    # elastic net; change if you want
+  nfolds = 5
+)
+
+# choose lambda (min = best fit, 1se = more regularized)
+#lambda_star <- cv_en$lambda.min
+lambda_star <- cv_en$lambda.1se
+
+p_hat <- as.numeric(
+  predict(cv_en, newx = x, s = lambda_star, type = "response")
+)
+
+png("final_plots/stdb_elastic_net_lambda.png",   # output filename
+    width  = 2000,          # pixels
+    height = 1600,
+    res    = 200)           # DPI (200–300 is typical for thesis-quality)
+
+plot(cv_en)                  # <-- produces the cv.glmnet plot
+
+dev.off()                    # closes the PNG device
+```
+
+```{r}
+# ROC object from pROC
+roc_obj <- pROC::roc(response = y_vec, predictor = p_hat, quiet = TRUE)
+
+# ROC AUC from pROC (explicit)
+roc_auc <- as.numeric(pROC::auc(roc_obj))
+
+# Average Precision / PR AUC from PRROC
+pr_obj <- PRROC::pr.curve(
+  scores.class0 = p_hat[y_vec == 1],  # scores for positives
+  scores.class1 = p_hat[y_vec == 0],  # scores for negatives
+  curve = FALSE
+)
+
+ap <- pr_obj$auc.integral
+ap
+roc_auc
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+results <- lapply(thresholds, function(th) {
+
+  # class predictions
+  y_pred <- ifelse(p_hat >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred == 1 & y_vec == 1)
+  tn <- sum(y_pred == 0 & y_vec == 0)
+  fp <- sum(y_pred == 1 & y_vec == 0)
+  fn <- sum(y_pred == 0 & y_vec == 1)
+  
+  # metrics
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_vec,
+    predicted = p_hat,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap,
+    ROCAUC      = roc_auc
+  )
+})
+
+results_df <- bind_rows(results)
+```
+
+# Validation
+
+```{r}
+#val <- read_tsv('validation/results/iteration1/inputs/validation_input.txt')
+
+# val_full <- val
+
+common_cols <- intersect(names(val_full), names(df2))
+
+val <- val_full %>% select(all_of(common_cols))
+
+# make sure y is numeric 0/1 (same coding as training)
+val$y <- as.numeric(val$y)
+
+# model.matrix with same formula
+x_val <- model.matrix(y ~ ., data = val)[, -1]
+
+# ensure same columns and order as training matrix x
+x_val <- x_val[, colnames(x), drop = FALSE]
+```
+
+```{r}
+p_hat_val <- as.numeric(
+  predict(cv_en, newx = x_val, s = lambda_star, type = "response")
+)
+
+# ROC AUC on validation
+roc_obj_val <- pROC::roc(response = y_val, predictor = p_hat_val, quiet = TRUE)
+roc_auc_val <- as.numeric(pROC::auc(roc_obj_val))
+
+# Average Precision on validation
+pr_obj_val <- PRROC::pr.curve(
+  scores.class0 = p_hat_val[y_val == 1],  # positives
+  scores.class1 = p_hat_val[y_val == 0],  # negatives
+  curve = FALSE
+)
+ap_val <- pr_obj_val$auc.integral
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+val_results <- lapply(thresholds, function(th) {
+  # hard predictions at this threshold
+  y_pred_val <- ifelse(p_hat_val >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred_val == 1 & y_val == 1)
+  tn <- sum(y_pred_val == 0 & y_val == 0)
+  fp <- sum(y_pred_val == 1 & y_val == 0)
+  fn <- sum(y_pred_val == 0 & y_val == 1)
+  
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC on validation using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_val,
+    predicted = p_hat_val,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap_val,
+    ROCAUC      = roc_auc_val
+  )
+})
+
+val_results_df <- bind_rows(val_results)
+
+write_tsv(val_results_df, 'stdb_only_EN.txt')
+```
+
+# STDB GB
+
+```{r}
+df <- read_tsv('../GB/tuning/results/feature_selection/inputs/modeling_input.txt')
+
+df2 <- df %>%
+  select(-sample)   # drop the sample ID
+
+# make sure y is numeric 0/1
+# if y is already 0/1 numeric, this is safe. 
+# if it's a factor with levels 0 and 1, this also works.
+df2$y <- as.numeric(df2$y)
+
+```
+
+```{r}
+# design matrix (all columns except y)
+x <- model.matrix(y ~ ., data = df2)[, -1]  # drop intercept column
+y_vec <- df2$y
+
+set.seed(123)
+
+cv_en <- cv.glmnet(
+  x      = x,
+  y      = y_vec,
+  family = "binomial",
+  alpha  = 0.5,    # elastic net; change if you want
+  nfolds = 5
+)
+
+# choose lambda (min = best fit, 1se = more regularized)
+#lambda_star <- cv_en$lambda.min
+lambda_star <- cv_en$lambda.1se
+
+p_hat <- as.numeric(
+  predict(cv_en, newx = x, s = lambda_star, type = "response")
+)
+
+plot(cv_en)
+```
+
+```{r}
+# ROC object from pROC
+roc_obj <- pROC::roc(response = y_vec, predictor = p_hat, quiet = TRUE)
+
+# ROC AUC from pROC (explicit)
+roc_auc <- as.numeric(pROC::auc(roc_obj))
+
+# Average Precision / PR AUC from PRROC
+pr_obj <- PRROC::pr.curve(
+  scores.class0 = p_hat[y_vec == 1],  # scores for positives
+  scores.class1 = p_hat[y_vec == 0],  # scores for negatives
+  curve = FALSE
+)
+
+ap <- pr_obj$auc.integral
+ap
+roc_auc
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+results <- lapply(thresholds, function(th) {
+
+  # class predictions
+  y_pred <- ifelse(p_hat >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred == 1 & y_vec == 1)
+  tn <- sum(y_pred == 0 & y_vec == 0)
+  fp <- sum(y_pred == 1 & y_vec == 0)
+  fn <- sum(y_pred == 0 & y_vec == 1)
+  
+  # metrics
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_vec,
+    predicted = p_hat,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap,
+    ROCAUC      = roc_auc
+  )
+})
+
+results_df <- bind_rows(results)
+```
+
+# Validation
+
+```{r}
+val <- read_tsv('../GB/tuning/validation/results/feature_selection/inputs/validation_input.txt')
+
+val2 <- val %>%
+  select(-sample)   # drop sample ID to match df2
+
+# make sure y is numeric 0/1 (same coding as training)
+val2$y <- as.numeric(val2$y)
+
+y_val <- val2$y
+
+# model.matrix with same formula
+x_val <- model.matrix(y ~ ., data = val2)[, -1]
+
+# ensure same columns and order as training matrix x
+x_val <- x_val[, colnames(x), drop = FALSE]
+```
+
+```{r}
+p_hat_val <- as.numeric(
+  predict(cv_en, newx = x_val, s = lambda_star, type = "response")
+)
+
+# ROC AUC on validation
+roc_obj_val <- pROC::roc(response = y_val, predictor = p_hat_val, quiet = TRUE)
+roc_auc_val <- as.numeric(pROC::auc(roc_obj_val))
+
+# Average Precision on validation
+pr_obj_val <- PRROC::pr.curve(
+  scores.class0 = p_hat_val[y_val == 1],  # positives
+  scores.class1 = p_hat_val[y_val == 0],  # negatives
+  curve = FALSE
+)
+ap_val <- pr_obj_val$auc.integral
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+val_results <- lapply(thresholds, function(th) {
+  # hard predictions at this threshold
+  y_pred_val <- ifelse(p_hat_val >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred_val == 1 & y_val == 1)
+  tn <- sum(y_pred_val == 0 & y_val == 0)
+  fp <- sum(y_pred_val == 1 & y_val == 0)
+  fn <- sum(y_pred_val == 0 & y_val == 1)
+  
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC on validation using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_val,
+    predicted = p_hat_val,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap_val,
+    ROCAUC      = roc_auc_val
+  )
+})
+
+val_results_df <- bind_rows(val_results)
+```
+
+# TB RF
+
+```{r}
+tb_rf <- read_tsv('../../../TB/tuning_RF/results/feature_selection/inputs/modeling_input.txt')
+tb_gb <- read_tsv('../../../TB/GB/tuning/results/feature_selection/inputs/modeling_input.txt')
+
+tb_merged <- tb_rf %>%
+  bind_cols(
+    tb_gb %>% select(-any_of(names(tb_rf)))
+  )
+
+df2 <- tb_merged %>%
+  select(-sample)   # drop the sample ID
+
+# make sure y is numeric 0/1
+# if y is already 0/1 numeric, this is safe. 
+# if it's a factor with levels 0 and 1, this also works.
+df2$y <- as.numeric(df2$y)
+
+```
+
+```{r}
+# design matrix (all columns except y)
+x <- model.matrix(y ~ ., data = df2)[, -1]  # drop intercept column
+y_vec <- df2$y
+
+set.seed(123)
+
+cv_en <- cv.glmnet(
+  x      = x,
+  y      = y_vec,
+  family = "binomial",
+  alpha  = 0.5,    # elastic net; change if you want
+  nfolds = 5
+)
+
+# choose lambda (min = best fit, 1se = more regularized)
+#lambda_star <- cv_en$lambda.min
+lambda_star <- cv_en$lambda.1se
+
+p_hat <- as.numeric(
+  predict(cv_en, newx = x, s = lambda_star, type = "response")
+)
+
+png("final_plots/tb_elastic_net_lambda.png",   # output filename
+    width  = 2000,          # pixels
+    height = 1600,
+    res    = 200)           # DPI (200–300 is typical for thesis-quality)
+
+plot(cv_en)                  # <-- produces the cv.glmnet plot
+
+dev.off()                    # closes the PNG device
+```
+
+```{r}
+# ROC object from pROC
+roc_obj <- pROC::roc(response = y_vec, predictor = p_hat, quiet = TRUE)
+
+# ROC AUC from pROC (explicit)
+roc_auc <- as.numeric(pROC::auc(roc_obj))
+
+# Average Precision / PR AUC from PRROC
+pr_obj <- PRROC::pr.curve(
+  scores.class0 = p_hat[y_vec == 1],  # scores for positives
+  scores.class1 = p_hat[y_vec == 0],  # scores for negatives
+  curve = FALSE
+)
+
+ap <- pr_obj$auc.integral
+ap
+roc_auc
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+results <- lapply(thresholds, function(th) {
+
+  # class predictions
+  y_pred <- ifelse(p_hat >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred == 1 & y_vec == 1)
+  tn <- sum(y_pred == 0 & y_vec == 0)
+  fp <- sum(y_pred == 1 & y_vec == 0)
+  fn <- sum(y_pred == 0 & y_vec == 1)
+  
+  # metrics
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_vec,
+    predicted = p_hat,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap,
+    ROCAUC      = roc_auc
+  )
+})
+
+results_df <- bind_rows(results)
+```
+
+# Validation
+
+```{r}
+val <- read_tsv('../../../TB/tuning_RF/validation/results/iteration1/inputs/validation_input.txt')
+
+val_full <- val
+
+common_cols <- intersect(names(val_full), names(df2))
+
+val <- val_full %>% select(all_of(common_cols))
+
+# make sure y is numeric 0/1 (same coding as training)
+val$y <- as.numeric(val$y)
+
+y_val <- val$y
+
+# model.matrix with same formula
+x_val <- model.matrix(y ~ ., data = val)[, -1]
+
+# ensure same columns and order as training matrix x
+x_val <- x_val[, colnames(x), drop = FALSE]
+```
+
+```{r}
+p_hat_val <- as.numeric(
+  predict(cv_en, newx = x_val, s = lambda_star, type = "response")
+)
+
+# ROC AUC on validation
+roc_obj_val <- pROC::roc(response = y_val, predictor = p_hat_val, quiet = TRUE)
+roc_auc_val <- as.numeric(pROC::auc(roc_obj_val))
+
+# Average Precision on validation
+pr_obj_val <- PRROC::pr.curve(
+  scores.class0 = p_hat_val[y_val == 1],  # positives
+  scores.class1 = p_hat_val[y_val == 0],  # negatives
+  curve = FALSE
+)
+ap_val <- pr_obj_val$auc.integral
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+val_results <- lapply(thresholds, function(th) {
+  # hard predictions at this threshold
+  y_pred_val <- ifelse(p_hat_val >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred_val == 1 & y_val == 1)
+  tn <- sum(y_pred_val == 0 & y_val == 0)
+  fp <- sum(y_pred_val == 1 & y_val == 0)
+  fn <- sum(y_pred_val == 0 & y_val == 1)
+  
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC on validation using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_val,
+    predicted = p_hat_val,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap_val,
+    ROCAUC      = roc_auc_val
+  )
+})
+
+val_results_df <- bind_rows(val_results)
+
+write_tsv(val_results_df, 'tb_only_EN.txt')
+```
+
+# TB GB
+
+```{r}
+df <- read_tsv('../../../TB/GB/tuning/results/feature_selection/inputs/modeling_input.txt')
+
+df2 <- df %>%
+  select(-sample)   # drop the sample ID
+
+# make sure y is numeric 0/1
+# if y is already 0/1 numeric, this is safe. 
+# if it's a factor with levels 0 and 1, this also works.
+df2$y <- as.numeric(df2$y)
+
+```
+
+```{r}
+# design matrix (all columns except y)
+x <- model.matrix(y ~ ., data = df2)[, -1]  # drop intercept column
+y_vec <- df2$y
+
+set.seed(123)
+
+cv_en <- cv.glmnet(
+  x      = x,
+  y      = y_vec,
+  family = "binomial",
+  alpha  = 0.5,    # elastic net; change if you want
+  nfolds = 5
+)
+
+# choose lambda (min = best fit, 1se = more regularized)
+#lambda_star <- cv_en$lambda.min
+lambda_star <- cv_en$lambda.1se
+
+p_hat <- as.numeric(
+  predict(cv_en, newx = x, s = lambda_star, type = "response")
+)
+
+plot(cv_en)
+```
+
+```{r}
+# ROC object from pROC
+roc_obj <- pROC::roc(response = y_vec, predictor = p_hat, quiet = TRUE)
+
+# ROC AUC from pROC (explicit)
+roc_auc <- as.numeric(pROC::auc(roc_obj))
+
+# Average Precision / PR AUC from PRROC
+pr_obj <- PRROC::pr.curve(
+  scores.class0 = p_hat[y_vec == 1],  # scores for positives
+  scores.class1 = p_hat[y_vec == 0],  # scores for negatives
+  curve = FALSE
+)
+
+ap <- pr_obj$auc.integral
+ap
+roc_auc
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+results <- lapply(thresholds, function(th) {
+
+  # class predictions
+  y_pred <- ifelse(p_hat >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred == 1 & y_vec == 1)
+  tn <- sum(y_pred == 0 & y_vec == 0)
+  fp <- sum(y_pred == 1 & y_vec == 0)
+  fn <- sum(y_pred == 0 & y_vec == 1)
+  
+  # metrics
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_vec,
+    predicted = p_hat,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap,
+    ROCAUC      = roc_auc
+  )
+})
+
+results_df <- bind_rows(results)
+```
+
+# Validation
+
+```{r}
+val <- read_tsv('../../../TB/GB/tuning/validation/results/feature_selection/inputs/validation_input.txt')
+
+val2 <- val %>%
+  select(-sample)   # drop sample ID to match df2
+
+# make sure y is numeric 0/1 (same coding as training)
+val2$y <- as.numeric(val2$y)
+
+y_val <- val2$y
+
+# model.matrix with same formula
+x_val <- model.matrix(y ~ ., data = val2)[, -1]
+
+# ensure same columns and order as training matrix x
+x_val <- x_val[, colnames(x), drop = FALSE]
+```
+
+```{r}
+p_hat_val <- as.numeric(
+  predict(cv_en, newx = x_val, s = lambda_star, type = "response")
+)
+
+# ROC AUC on validation
+roc_obj_val <- pROC::roc(response = y_val, predictor = p_hat_val, quiet = TRUE)
+roc_auc_val <- as.numeric(pROC::auc(roc_obj_val))
+
+# Average Precision on validation
+pr_obj_val <- PRROC::pr.curve(
+  scores.class0 = p_hat_val[y_val == 1],  # positives
+  scores.class1 = p_hat_val[y_val == 0],  # negatives
+  curve = FALSE
+)
+ap_val <- pr_obj_val$auc.integral
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+val_results <- lapply(thresholds, function(th) {
+  # hard predictions at this threshold
+  y_pred_val <- ifelse(p_hat_val >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred_val == 1 & y_val == 1)
+  tn <- sum(y_pred_val == 0 & y_val == 0)
+  fp <- sum(y_pred_val == 1 & y_val == 0)
+  fn <- sum(y_pred_val == 0 & y_val == 1)
+  
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC on validation using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_val,
+    predicted = p_hat_val,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap_val,
+    ROCAUC      = roc_auc_val
+  )
+})
+
+val_results_df <- bind_rows(val_results)
+```
+
+# CB RF
+
+```{r}
+df <- read_tsv('../../../Combined_Breeds/tuning/results/feature_selection/inputs/modeling_input.txt')
+
+df2 <- df %>%
+  select(-sample)   # drop the sample ID
+
+# make sure y is numeric 0/1
+# if y is already 0/1 numeric, this is safe. 
+# if it's a factor with levels 0 and 1, this also works.
+df2$y <- as.numeric(df2$y)
+
+```
+
+```{r}
+# design matrix (all columns except y)
+x <- model.matrix(y ~ ., data = df2)[, -1]  # drop intercept column
+y_vec <- df2$y
+
+set.seed(123)
+
+cv_en <- cv.glmnet(
+  x      = x,
+  y      = y_vec,
+  family = "binomial",
+  alpha  = 0.5,    # elastic net; change if you want
+  nfolds = 5
+)
+
+# choose lambda (min = best fit, 1se = more regularized)
+#lambda_star <- cv_en$lambda.min
+lambda_star <- cv_en$lambda.1se
+
+p_hat <- as.numeric(
+  predict(cv_en, newx = x, s = lambda_star, type = "response")
+)
+
+png("rf_en_combined.png",   # output filename
+    width  = 2000,          # pixels
+    height = 1600,
+    res    = 200)           # DPI (200–300 is typical for thesis-quality)
+
+plot(cv_en)                  # <-- produces the cv.glmnet plot
+
+dev.off()                    # closes the PNG device
+```
+
+```{r}
+# ROC object from pROC
+roc_obj <- pROC::roc(response = y_vec, predictor = p_hat, quiet = TRUE)
+
+# ROC AUC from pROC (explicit)
+roc_auc <- as.numeric(pROC::auc(roc_obj))
+
+# Average Precision / PR AUC from PRROC
+pr_obj <- PRROC::pr.curve(
+  scores.class0 = p_hat[y_vec == 1],  # scores for positives
+  scores.class1 = p_hat[y_vec == 0],  # scores for negatives
+  curve = FALSE
+)
+
+ap <- pr_obj$auc.integral
+ap
+roc_auc
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+results <- lapply(thresholds, function(th) {
+
+  # class predictions
+  y_pred <- ifelse(p_hat >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred == 1 & y_vec == 1)
+  tn <- sum(y_pred == 0 & y_vec == 0)
+  fp <- sum(y_pred == 1 & y_vec == 0)
+  fn <- sum(y_pred == 0 & y_vec == 1)
+  
+  # metrics
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_vec,
+    predicted = p_hat,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap,
+    ROCAUC      = roc_auc
+  )
+})
+
+results_df <- bind_rows(results)
+```
+
+# Validation
+
+```{r}
+val <- read_tsv('../../../Combined_Breeds/tuning/validation/results/feature_selection/inputs/validation_input.txt')
+
+val2 <- val %>%
+  select(-sample)   # drop sample ID to match df2
+
+# make sure y is numeric 0/1 (same coding as training)
+val2$y <- as.numeric(val2$y)
+
+y_val <- val2$y
+
+# model.matrix with same formula
+x_val <- model.matrix(y ~ ., data = val2)[, -1]
+
+# ensure same columns and order as training matrix x
+x_val <- x_val[, colnames(x), drop = FALSE]
+```
+
+```{r}
+p_hat_val <- as.numeric(
+  predict(cv_en, newx = x_val, s = lambda_star, type = "response")
+)
+
+# ROC AUC on validation
+roc_obj_val <- pROC::roc(response = y_val, predictor = p_hat_val, quiet = TRUE)
+roc_auc_val <- as.numeric(pROC::auc(roc_obj_val))
+
+# Average Precision on validation
+pr_obj_val <- PRROC::pr.curve(
+  scores.class0 = p_hat_val[y_val == 1],  # positives
+  scores.class1 = p_hat_val[y_val == 0],  # negatives
+  curve = FALSE
+)
+ap_val <- pr_obj_val$auc.integral
+```
+
+```{r}
+# indices for each group
+idx0 <- val2$stdb == 0
+idx1 <- val2$stdb == 1
+
+# outcomes + probs for each group
+y_val0      <- y_val[idx0]
+p_hat_val0  <- p_hat_val[idx0]
+
+y_val1      <- y_val[idx1]
+p_hat_val1  <- p_hat_val[idx1]
+
+library(pROC)
+library(PRROC)
+
+## STDB = 0
+if (length(unique(y_val0)) >= 2) {
+  roc0     <- pROC::roc(y_val0, p_hat_val0, quiet = TRUE)
+  roc_auc0 <- as.numeric(pROC::auc(roc0))
+  
+  pr0 <- PRROC::pr.curve(
+    scores.class0 = p_hat_val0[y_val0 == 1],
+    scores.class1 = p_hat_val0[y_val0 == 0],
+    curve = FALSE
+  )
+  ap0 <- pr0$auc.integral
+} else {
+  roc_auc0 <- NA_real_
+  ap0      <- NA_real_
+}
+
+## STDB = 1
+if (length(unique(y_val1)) >= 2) {
+  roc1     <- pROC::roc(y_val1, p_hat_val1, quiet = TRUE)
+  roc_auc1 <- as.numeric(pROC::auc(roc1))
+  
+  pr1 <- PRROC::pr.curve(
+    scores.class0 = p_hat_val1[y_val1 == 1],
+    scores.class1 = p_hat_val1[y_val1 == 0],
+    curve = FALSE
+  )
+  ap1 <- pr1$auc.integral
+} else {
+  roc_auc1 <- NA_real_
+  ap1      <- NA_real_
+}
+
+library(ModelMetrics)
+library(dplyr)
+library(tibble)
+
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+val_results_0 <- lapply(thresholds, function(th) {
+  y_pred0 <- ifelse(p_hat_val0 >= th, 1, 0)
+  
+  tp <- sum(y_pred0 == 1 & y_val0 == 1)
+  tn <- sum(y_pred0 == 0 & y_val0 == 0)
+  fp <- sum(y_pred0 == 1 & y_val0 == 0)
+  fn <- sum(y_pred0 == 0 & y_val0 == 1)
+  
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_val0,
+    predicted = p_hat_val0,
+    cutoff    = th
+  )
+  
+  tibble(
+    stdb        = 0,
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap0,
+    ROCAUC      = roc_auc0
+  )
+}) |> bind_rows()
+
+val_results_1 <- lapply(thresholds, function(th) {
+  y_pred1 <- ifelse(p_hat_val1 >= th, 1, 0)
+  
+  tp <- sum(y_pred1 == 1 & y_val1 == 1)
+  tn <- sum(y_pred1 == 0 & y_val1 == 0)
+  fp <- sum(y_pred1 == 1 & y_val1 == 0)
+  fn <- sum(y_pred1 == 0 & y_val1 == 1)
+  
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_val1,
+    predicted = p_hat_val1,
+    cutoff    = th
+  )
+  
+  tibble(
+    stdb        = 1,
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap1,
+    ROCAUC      = roc_auc1
+  )
+}) |> bind_rows()
+
+val_results_by_stdb <- bind_rows(val_results_0, val_results_1)
+
+```
+
+# CB GB
+
+```{r}
+rf_stdb <- read_tsv('results/feature_selection/inputs/modeling_input.txt')
+gb_stdb <- read_tsv('../GB/tuning/results/feature_selection/inputs/modeling_input.txt')
+
+rf_tb <- read_tsv('../../../TB/tuning_RF/results/feature_selection/inputs/modeling_input.txt')
+gb_tb <- read_tsv('../../../TB/GB/tuning/results/feature_selection/inputs/modeling_input.txt')
+
+rf_tb$pacer <- 0
+gb_tb$pacer <- 0
+rf_tb$trotter <- 0
+gb_tb$trotter <- 0
+
+rf_cb <- read_tsv('../../../Combined_Breeds/tuning/results/feature_selection/inputs/modeling_input.txt')
+gb_cb <- read_tsv('../../../Combined_Breeds/GB/tuning/results/feature_selection/inputs/modeling_input.txt')
+```
+
+```{r}
+
+# -------------------------------------------------------------------
+# 1. Set your ID column name here
+# -------------------------------------------------------------------
+id_col <- "sample"   # change this if your ID column has a different name
+
+# -------------------------------------------------------------------
+# 2. Start from rf_cb and add pacer/trotter from rf_tb + rf_stdb
+# -------------------------------------------------------------------
+gait_info <- bind_rows(
+  rf_tb   %>% select(all_of(c(id_col, "pacer", "trotter"))),
+  rf_stdb %>% select(all_of(c(id_col, "pacer", "trotter")))
+) %>%
+  distinct(!!sym(id_col), .keep_all = TRUE)
+
+df <- rf_cb %>%
+  left_join(gait_info, by = id_col)
+# Now df = rf_cb + pacer + trotter (NA where unknown)
+
+# # -------------------------------------------------------------------
+# # 3. Helper: add only truly new columns from another data frame
+# # -------------------------------------------------------------------
+# add_new_columns <- function(base, other, id_col) {
+#   # columns that exist in 'other' but NOT yet in 'base'
+#   new_cols <- setdiff(names(other), names(base))
+#   # never treat the ID column itself as a "new" feature
+#   new_cols <- setdiff(new_cols, id_col)
+# 
+#   if (length(new_cols) == 0) return(base)
+# 
+#   other_sub <- other %>%
+#     select(all_of(c(id_col, new_cols)))
+# 
+#   left_join(base, other_sub, by = id_col)
+# }
+# 
+# # -------------------------------------------------------------------
+# # 4. Add new columns from the other modeling_input data frames
+# # -------------------------------------------------------------------
+# df_final <- df %>%
+#   add_new_columns(gb_cb,   id_col) %>%
+#   add_new_columns(rf_tb,   id_col) %>%
+#   add_new_columns(gb_tb,   id_col) %>%
+#   add_new_columns(rf_stdb, id_col) %>%
+#   add_new_columns(gb_stdb, id_col)
+
+write_tsv(df, "final_elastic_net_input.tsv")
+
+df <- read_tsv('final_elastic_net_input.tsv')
+
+#df_final_nm <- df_final[, colSums(is.na(df_final)) == 0]
+```
+
+```{r}
+non_feature_candidates <- c(
+  "sample_id", "sample", "Sample", "Sample_ID",  # any ID-ish names, only dropped if they exist
+  "y",
+  "stallion", "gelding", "mare",
+  "pacer", "trotter",
+  "stdb", "tb"
+)
+
+non_feature_cols <- intersect(non_feature_candidates, names(df))
+non_feature_cols
+
+feature_cols <- setdiff(names(df), non_feature_cols)
+
+y_vec <- df$y
+
+x_raw <- as.matrix(df[, feature_cols])
+```
+
+```{r}
+
+df2 <- df %>%
+  select(-sample)   # drop the sample ID
+
+# make sure y is numeric 0/1
+# if y is already 0/1 numeric, this is safe. 
+# if it's a factor with levels 0 and 1, this also works.
+df2$y <- as.numeric(df2$y)
+```
+
+```{r}
+# design matrix (all columns except y)
+x <- model.matrix(y ~ ., data = df2)[, -1]  # drop intercept column
+y_vec <- df2$y
+
+set.seed(123)
+
+cv_en <- cv.glmnet(
+  x      = x,
+  y      = y_vec,
+  family = "binomial",
+  alpha  = 0.5,    # elastic net; change if you want
+  nfolds = 5
+)
+
+# choose lambda (min = best fit, 1se = more regularized)
+#lambda_star <- cv_en$lambda.min
+lambda_star <- cv_en$lambda.1se
+
+p_hat <- as.numeric(
+  predict(cv_en, newx = x, s = lambda_star, type = "response")
+)
+
+png("final_plots/elastic_net_lambda.png",   # output filename
+    width  = 2000,          # pixels
+    height = 1600,
+    res    = 200)           # DPI (200–300 is typical for thesis-quality)
+
+plot(cv_en)                  # <-- produces the cv.glmnet plot
+
+dev.off()                    # closes the PNG device
+```
+
+```{r}
+# ROC object from pROC
+roc_obj <- pROC::roc(response = y_vec, predictor = p_hat, quiet = TRUE)
+
+# ROC AUC from pROC (explicit)
+roc_auc <- as.numeric(pROC::auc(roc_obj))
+
+# Average Precision / PR AUC from PRROC
+pr_obj <- PRROC::pr.curve(
+  scores.class0 = p_hat[y_vec == 1],  # scores for positives
+  scores.class1 = p_hat[y_vec == 0],  # scores for negatives
+  curve = FALSE
+)
+
+ap <- pr_obj$auc.integral
+ap
+roc_auc
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+results <- lapply(thresholds, function(th) {
+
+  # class predictions
+  y_pred <- ifelse(p_hat >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred == 1 & y_vec == 1)
+  tn <- sum(y_pred == 0 & y_vec == 0)
+  fp <- sum(y_pred == 1 & y_vec == 0)
+  fn <- sum(y_pred == 0 & y_vec == 1)
+  
+  # metrics
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_vec,
+    predicted = p_hat,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap,
+    ROCAUC      = roc_auc
+  )
+})
+
+results_df <- bind_rows(results)
+```
+
+# Validation
+
+```{r}
+#val <- read_tsv('../../../Combined_Breeds/tuning/validation/results/iteration1/inputs/validation_input.txt')
+
+# val <- val %>%
+#   left_join(
+#     df_final_nm %>% select(sample, pacer, trotter),
+#     by = "sample"
+#   )
+# 
+# common_cols <- intersect(names(val), names(df))
+# 
+# val_merged <- val %>% select(all_of(common_cols))
+# 
+# write.table(
+#   val_merged,
+#   file = "val_merged.tsv",
+#   sep = "\t",
+#   quote = FALSE,
+#   row.names = FALSE
+# )
+
+val_merged <- read_tsv('val_merged.tsv')
+
+val2 <- val_merged %>%
+  select(-sample)   # drop sample ID to match df2
+
+# make sure y is numeric 0/1 (same coding as training)
+val2$y <- as.numeric(val2$y)
+
+y_val <- val2$y
+
+# model.matrix with same formula
+train_cols <- colnames(x)
+
+# Which columns from training are missing in val2?
+missing_in_val <- setdiff(train_cols, colnames(val2))
+
+# Add them as 0 (e.g. homozygous reference / absent)
+for (col in missing_in_val) {
+  val2[[col]] <- 0
+}
+
+# ensure same columns and order as training matrix x
+x_val <- as.matrix(val2[, train_cols, drop = FALSE])
+```
+
+```{r}
+p_hat_val <- as.numeric(
+  predict(cv_en, newx = x_val, s = lambda_star, type = "response")
+)
+
+# ROC AUC on validation
+roc_obj_val <- pROC::roc(response = y_val, predictor = p_hat_val, quiet = TRUE)
+roc_auc_val <- as.numeric(pROC::auc(roc_obj_val))
+
+# Average Precision on validation
+pr_obj_val <- PRROC::pr.curve(
+  scores.class0 = p_hat_val[y_val == 1],  # positives
+  scores.class1 = p_hat_val[y_val == 0],  # negatives
+  curve = FALSE
+)
+ap_val <- pr_obj_val$auc.integral
+```
+
+```{r}
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+val_results <- lapply(thresholds, function(th) {
+  # hard predictions at this threshold
+  y_pred_val <- ifelse(p_hat_val >= th, 1, 0)
+  
+  # confusion matrix components
+  tp <- sum(y_pred_val == 1 & y_val == 1)
+  tn <- sum(y_pred_val == 0 & y_val == 0)
+  fp <- sum(y_pred_val == 1 & y_val == 0)
+  fn <- sum(y_pred_val == 0 & y_val == 1)
+  
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  # MCC on validation using probabilities + cutoff
+  mcc_val <- ModelMetrics::mcc(
+    actual    = y_val,
+    predicted = p_hat_val,
+    cutoff    = th
+  )
+  
+  tibble(
+    threshold   = th,
+    sensitivity = sensitivity,
+    specificity = specificity,
+    MCC         = mcc_val,
+    tp = tp,
+    fp = fp,
+    tn = tn,
+    fn = fn,
+    AP          = ap_val,
+    ROCAUC      = roc_auc_val
+  )
+})
+
+val_results_df <- bind_rows(val_results)
+```
+
+```{r}
+library(ModelMetrics)
+
+# ---- 0) Threshold grid ----
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+# ---- 1) Helper: compute metrics across thresholds for a given subgroup ----
+compute_metrics <- function(y_true, p_hat, thresholds) {
+  # threshold-independent metrics
+  auc_val <- ModelMetrics::auc(
+    actual    = y_true,
+    predicted = p_hat
+  )
+  
+  ap_val <- ModelMetrics::prauc(
+    actual    = y_true,
+    predicted = p_hat
+  )
+  
+  map_dfr(thresholds, function(th) {
+    # hard predictions at this threshold
+    y_pred <- ifelse(p_hat >= th, 1, 0)
+    
+    # confusion matrix components
+    tp <- sum(y_pred == 1 & y_true == 1)
+    tn <- sum(y_pred == 0 & y_true == 0)
+    fp <- sum(y_pred == 1 & y_true == 0)
+    fn <- sum(y_pred == 0 & y_true == 1)
+    
+    sensitivity <- tp / (tp + fn)
+    specificity <- tn / (tn + fp)
+    
+    mcc_val <- ModelMetrics::mcc(
+      actual    = y_true,
+      predicted = p_hat,
+      cutoff    = th
+    )
+    
+    tibble(
+      threshold   = th,
+      sensitivity = sensitivity,
+      specificity = specificity,
+      MCC         = mcc_val,
+      AP          = ap_val,
+      AUROC       = auc_val,
+      tp = tp,
+      fp = fp,
+      tn = tn,
+      fn = fn
+    )
+  })
+}
+
+# ---- 2) Overall validation metrics (all samples) ----
+val_all <- compute_metrics(
+  y_true     = y_val,
+  p_hat      = p_hat_val,
+  thresholds = thresholds
+) %>%
+  mutate(group = "All")
+
+# ---- 3) Define your STDB flag (0/1) ----
+# EDIT THIS LINE to match your column name:
+# e.g. if your validation df is called `val2` and the column is `stdb`:
+stdb_flag <- val2$stdb   # <-- change to your actual column
+
+# ---- 4) STDB = 0 ----
+val_stdb0 <- compute_metrics(
+  y_true     = y_val[stdb_flag == 0],
+  p_hat      = p_hat_val[stdb_flag == 0],
+  thresholds = thresholds
+) %>%
+  mutate(group = "STDB0")
+
+# ---- 5) STDB = 1 ----
+val_stdb1 <- compute_metrics(
+  y_true     = y_val[stdb_flag == 1],
+  p_hat      = p_hat_val[stdb_flag == 1],
+  thresholds = thresholds
+) %>%
+  mutate(group = "STDB1")
+
+# ---- 6) Combine all results ----
+val_results_df <- bind_rows(val_all, val_stdb0, val_stdb1)
+
+```
+
+```{}
+```
+
+```{r}
+library(dplyr)
+library(purrr)
+library(tibble)
+library(ModelMetrics)
+
+# -----------------------------
+# 0) Threshold grid
+# -----------------------------
+thresholds <- seq(0.01, 0.99, by = 0.01)
+
+# -----------------------------
+# 1) Helper: average precision (AP)
+# -----------------------------
+average_precision <- function(y_true, p_hat) {
+  # y_true must be 0/1
+  if (!any(y_true == 1) || !any(y_true == 0)) {
+    return(NA_real_)  # AP undefined if only one class present
+  }
+  
+  ord <- order(p_hat, decreasing = TRUE)
+  y_true <- y_true[ord]
+  
+  tp <- cumsum(y_true == 1)
+  fp <- cumsum(y_true == 0)
+  
+  precision <- tp / (tp + fp)
+  recall    <- tp / sum(y_true == 1)
+  
+  # Compute AP as sum over recall steps: sum( (R_i - R_{i-1}) * P_i )
+  ap <- 0
+  prev_recall <- 0
+  for (i in seq_along(recall)) {
+    if (i == 1 || recall[i] != recall[i - 1]) {
+      ap <- ap + precision[i] * (recall[i] - prev_recall)
+      prev_recall <- recall[i]
+    }
+  }
+  ap
+}
+
+# -----------------------------
+# 2) Helper: compute metrics across thresholds for a given subgroup
+# -----------------------------
+compute_metrics <- function(y_true, p_hat, thresholds) {
+  # if only one class present, AP and AUC are undefined
+  if (length(unique(y_true)) < 2L) {
+    ap_val      <- NA_real_
+    roc_auc_val <- NA_real_
+  } else {
+    ap_val      <- average_precision(y_true, p_hat)
+    roc_auc_val <- ModelMetrics::auc(actual = y_true, predicted = p_hat)
+  }
+  
+  map_dfr(thresholds, function(th) {
+    # hard predictions at this threshold
+    y_pred <- ifelse(p_hat >= th, 1, 0)
+    
+    # confusion matrix components
+    tp <- sum(y_pred == 1 & y_true == 1)
+    tn <- sum(y_pred == 0 & y_true == 0)
+    fp <- sum(y_pred == 1 & y_true == 0)
+    fn <- sum(y_pred == 0 & y_true == 1)
+    
+    sensitivity <- ifelse(tp + fn > 0, tp / (tp + fn), NA_real_)
+    specificity <- ifelse(tn + fp > 0, tn / (tn + fp), NA_real_)
+    
+    mcc_val <- ModelMetrics::mcc(
+      actual    = y_true,
+      predicted = p_hat,
+      cutoff    = th
+    )
+    
+    tibble(
+      threshold   = th,
+      sensitivity = sensitivity,
+      specificity = specificity,
+      MCC         = mcc_val,
+      tp = tp,
+      fp = fp,
+      tn = tn,
+      fn = fn,
+      AP     = ap_val,
+      ROCAUC = roc_auc_val
+    )
+  })
+}
+
+# -----------------------------
+# 3) Overall validation metrics (All samples)
+# -----------------------------
+val_all <- compute_metrics(
+  y_true     = y_val,
+  p_hat      = p_hat_val,
+  thresholds = thresholds
+) %>%
+  mutate(group = "All")
+
+# -----------------------------
+# 4) STDB flag (0/1) - EDIT THIS LINE if needed
+# -----------------------------
+# Change `val$STDB` to your actual 0/1 indicator column name
+stdb_flag <- val2$stdb
+
+# -----------------------------
+# 5) STDB = 0
+# -----------------------------
+val_stdb0 <- compute_metrics(
+  y_true     = y_val[stdb_flag == 0],
+  p_hat      = p_hat_val[stdb_flag == 0],
+  thresholds = thresholds
+) %>%
+  mutate(group = "STDB0")
+
+# -----------------------------
+# 6) STDB = 1
+# -----------------------------
+val_stdb1 <- compute_metrics(
+  y_true     = y_val[stdb_flag == 1],
+  p_hat      = p_hat_val[stdb_flag == 1],
+  thresholds = thresholds
+) %>%
+  mutate(group = "STDB1")
+
+# -----------------------------
+# 7) Combine all results
+# -----------------------------
+val_results_df <- bind_rows(val_all, val_stdb0, val_stdb1)
+
+
+```
+
+# Coefficients
+
+```{r}
+# Extract coefficients at lambda.1se
+beta <- coef(cv_en, s = "lambda.1se")  # returns a sparse matrix
+
+coef_df <- beta %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  rownames_to_column("term") %>%
+  rename(coef = 2) %>%
+  as_tibble()
+
+# Remove intercept
+coef_df <- coef_df %>%
+  filter(term != "(Intercept)")76
+
+covariate_terms <- c(
+  "stdb", "tb",          # breed indicators
+  "stallion", "gelding", "mare",   # sex indicators
+  "pacer", "trotter"     # gait indicators
+)
+
+# covariate_terms <- c(
+# "sex"
+# )
+
+# Keep all covariates, even if coef is 0 (so you can show they were shrunk out)
+covars_tbl <- coef_df %>%
+  filter(term %in% covariate_terms)
+
+# Genetic predictors = everything else
+variants_tbl <- coef_df %>%
+  filter(!term %in% covariate_terms)
+
+variants_nz <- variants_tbl %>%
+  filter(coef != 0)
+
+top20_variants <- variants_tbl %>%
+  filter(coef != 0) %>%
+  arrange(desc(abs(coef))) %>%
+  slice_head(n = 20)
+
+coef_table <- bind_rows(
+  covars_tbl %>% mutate(type = "Covariate"),
+  top20_variants %>% mutate(type = "Variant")
+) %>%
+  # optional: order with covariates first, then variants by |coef|
+  arrange(
+    factor(type, levels = c("Covariate", "Variant")),
+    desc(abs(coef))
+  )
+
+coef_table
+
+# Extract just the variant names (terms)
+variant_list <- top20_variants$term
+
+# Write to a plain text file (one variant per line)
+#writeLines(variant_list, "EN_variants.txt")
+
+#write_csv(coef_table, "EN_coef_table_template.csv")
+```
+
+```{r}
+en_df <- read_csv('EN_coef_table_template.csv')
+
+en_df <- en_df %>%
+  mutate(odds_ratio = exp(log_odds))
+
+```
+
+```{r}
+library(dplyr)
+library(gt)
+
+library(dplyr)
+library(gt)
+
+# 1) Clean + order table for display
+coef_table_disp <- en_df %>%
+  # fix any typos like "Covariatei"
+  mutate(
+    Type = if_else(grepl("^Covariate", Type), "Covariate", Type),
+    Type = factor(Type, levels = c("Covariate", "Variant"))
+  ) %>%
+  arrange(Type, desc(abs(log_odds))) %>%
+  # choose the display column order
+  select(
+    Type,
+    Variable,
+    log_odds,
+    odds_ratio,
+    gene,
+    variant_effect,
+    variant_impact
+  )
+
+# 2) Build a nice gt table
+tbl_en <- coef_table_disp %>%
+  gt() %>%
+  # Row groups
+  tab_row_group(
+    group = "Covariates",
+    rows  = Type == "Covariate"
+  ) %>%
+  tab_row_group(
+    group = "Variants",
+    rows  = Type == "Variant"
+  ) %>%
+  # Hide helper column
+  cols_hide(columns = Type) %>%
+  # Pretty labels
+  cols_label(
+    Variable        = "Variable",
+    log_odds        = html("Log-odds (&beta;)"),
+    odds_ratio      = html("OR"),
+    gene            = "Gene",
+    variant_effect  = "Variant effect",
+    variant_impact  = "Predicted impact"
+  ) %>%
+  # Numeric formatting
+  fmt_number(
+    columns = c(log_odds, odds_ratio),
+    decimals = 3
+  ) %>%
+  # Alignments
+  cols_align(
+    align   = "center",
+    columns = c(log_odds, odds_ratio, gene, variant_effect, variant_impact)
+  ) %>%
+  cols_align(
+    align   = "left",
+    columns = Variable
+  ) %>%
+  # Bold column labels
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  ) %>%
+  # Bold the row-group headers (Covariates / Variants)
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_row_groups()
+  ) %>%
+  # General styling
+  tab_options(
+    table.font.size = px(14),
+    data_row.padding = px(5),
+    row.striping.background_color = "#f7f7f7",
+    row.striping.include_table_body = TRUE
+  ) |>
+    fmt_missing(
+    columns = everything(),
+    missing_text = "–"
+  )
+
+tbl_en
+
+
+
+gtsave(
+  data = tbl_en,
+  filename = "final_plots/elastic_net_coefficients_table.html"
+)
+```

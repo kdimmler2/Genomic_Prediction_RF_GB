@@ -1,0 +1,1159 @@
+---
+title: "Comparing Best RF Models"
+author: "Kirsten Dimmler"
+format:
+  html:
+    toc: true
+    number-sections: true
+    self-contained: true
+execute:
+  echo: true
+  warning: false
+  message: false
+editor: visual
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(patchwork)
+library(RColorBrewer)
+library(ComplexUpset)
+library(gt)
+```
+
+# Top Model
+
+## Training Summary
+
+```{r}
+cc <- c(max_features = "character")  # add more like criterion="character" if needed
+
+read_one <- function(path) {
+  read.csv(path, header = TRUE, stringsAsFactors = FALSE, colClasses = cc)
+}
+
+train1 <- read_one('final_plots/RF1_Top5_CV.csv')
+train2 <- read_one('../tuning2/final_plots/RF1_Top5_CV.csv')
+train3 <- read_one('../tuning3/final_plots/RF1_Top5_CV.csv')
+train4 <- read_one('../tuning4/final_plots/RF1_Top5_CV.csv')
+train5 <- read_one('../tuning5/final_plots/RF1_Top5_CV.csv')
+
+train1$run <- 'run1'
+train2$run <- 'run2'
+train3$run <- 'run3'
+train4$run <- 'run4'
+train5$run <- 'run5'
+
+train <- dplyr::bind_rows(train1, train2, train3, train4, train5)
+
+train <- train %>%
+  mutate(
+    max_depth = factor(max_depth,
+                       levels = 1:5,
+                       labels = c("10", "12", "16", "20", "None")),
+    max_features = factor(max_features,
+                          levels = 1:4,
+                          labels = c("0.3", "0.5", "sqrt", "log2")),
+    criterion = factor(criterion,
+                       levels = 1:2,
+                       labels = c("gini", "entropy")),
+    n_estimators = as.numeric(n_estimators),
+    min_samples_split = as.numeric(min_samples_split),
+    min_samples_leaf = as.numeric(min_samples_leaf)
+  ) %>%
+  mutate(across(c(max_depth, max_features, criterion), as.character))
+
+
+rf_stdb <- train
+```
+
+```{r}
+# add any metric columns you actually have in train_tbl
+candidate_metrics <- c(
+  "cv_ap", "cv_auc",
+  "cv_mcc", "cv_f1", "cv_bal_acc",
+  "cv_recall", "cv_specificity"
+)
+
+# pretty labels for table
+label_map <- c(
+  cv_ap       = "Mean AP",
+  cv_auc      = "Mean AUROC",
+  cv_mcc      = "Mean MCC",
+  cv_f1       = "Mean F1",
+  cv_bal_acc   = "Balanced Accuracy",
+  cv_recall  = "Sensitivity",
+  cv_specificity = "Specificity"
+)
+
+metrics_present <- intersect(candidate_metrics, names(train_tbl))
+
+RF_summary <- train_tbl %>%
+  select(run, all_of(metrics_present)) %>%
+  pivot_longer(cols = -run, names_to = "metric", values_to = "value") %>%
+  group_by(metric) %>%
+  summarize(
+    Mean  = mean(value),
+    SD    = sd(value),
+    SE    = SD / sqrt(n()),
+    t_val = qt(0.975, df = n() - 1),
+    `CI Low`  = Mean - t_val * SE,
+    `CI High` = Mean + t_val * SE,
+    Min   = min(value),
+    Max   = max(value),
+    .groups = "drop"
+  ) %>%
+  mutate(Metric = label_map[metric]) %>%
+  select(Metric, Mean, SD, SE, `CI Low`, `CI High`, Min, Max)
+
+RF_summary_gt <- metric_summary %>%
+  gt() %>%
+  fmt_number(
+    columns = c(Mean, SD, SE, `CI Low`, `CI High`, Min, Max),
+    decimals = 3
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  ) %>%
+  # ✅ Add spacing for readability
+  cols_width(
+    Metric ~ px(90),          # wider first column
+    everything() ~ px(90)      # widen all numeric columns
+  ) %>%
+  tab_options(
+    #column_label_padding = px(10),  # space above/below column headers
+    data_row.padding = px(6)        # space in the cell rows
+  )
+
+RF_summary_gt
+
+gtsave(RF_summary_gt, "final_plots/RF_train_stats.html")
+```
+
+```{r}
+# Bind and create row groups
+combined_summary <- bind_rows(
+  RF_summary %>% mutate(Model = "Random Forest"),
+  GB_summary %>% mutate(Model = "Gradient Boosting")
+) %>%
+  select(Model, Metric, Mean, SD, SE, `CI Low`, `CI High`, Min, Max) %>%
+  arrange(factor(Model, levels = c("Random Forest", "Gradient Boosting")),
+          Metric)
+
+# Build stratified gt table (row groups = models)
+combined_summary_gt <- combined_summary %>%
+  gt(groupname_col = "Model") %>%
+  fmt_number(
+    columns = c(Mean, SD, SE, `CI Low`, `CI High`, Min, Max),
+    decimals = 3
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),          # <-- bold the row group headers
+    locations = cells_row_groups()
+  ) %>%
+  cols_width(
+    Metric ~ px(160),
+    everything() ~ px(90)
+  )
+
+combined_summary_gt
+
+gtsave(combined_summary_gt, "final_plots/combined_train_stats.html")
+```
+
+```{r}
+train_scores <- train |> select(run, cv_ap)
+
+train_scores_unique <- train_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+train <- train %>%
+  select(-cv_ap, -run) %>%
+  mutate(
+    across(everything(), as.factor))
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(train, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# Summarize F1 stats per run
+train_summary <- train_scores %>%
+  group_by(run) %>%
+  summarise(
+    mean_f1 = mean(cv_ap, na.rm = TRUE),
+    min_f1 = min(cv_ap, na.rm = TRUE),
+    max_f1 = max(cv_ap, na.rm = TRUE)
+  )
+
+plot_f1 <- ggplot(train_scores_unique, aes(x = factor(run), y = cv_ap)) +
+  geom_col(fill = "steelblue", color = 'black') +
+  theme_minimal() +
+  labs(x = "Model Run", y = "Mean Average Precision", title = "Mean Average Precision") +
+  ylim(0, 0.8)
+
+(param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+
+ggsave("final_plots/RF_metrics.png", plot = last_plot(),
+       width = 10, height = 8, units = "in", dpi = 300)
+```
+
+## Test Summary
+
+```{r}
+cc <- c(max_features = "character")  # add more like criterion="character" if needed
+
+read_one <- function(path) {
+  read.csv(path, header = TRUE, stringsAsFactors = FALSE, colClasses = cc)
+}
+
+test1 <- read_one('final_plots/RF1_Top5_Test.csv')
+test2 <- read_one('../tuning2/final_plots/RF2_Top5_Test.csv')
+test3 <- read_one('../tuning3/final_plots/RF3_Top5_Test.csv')
+test4 <- read_one('../tuning4/final_plots/RF4_Top5_Test.csv')
+test5 <- read_one('../tuning5/final_plots/RF5_Top5_Test.csv')
+
+test1$run <- 'run1'
+test2$run <- 'run2'
+test3$run <- 'run3'
+test4$run <- 'run4'
+test5$run <- 'run5'
+
+test <- dplyr::bind_rows(test1, test2, test3, test4, test5)
+
+test_scores <- test |> select(run, test_avg_precision)
+
+test_scores_unique <- test_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+test <- test %>%
+  select(-test_avg_precision, -run) %>%
+  mutate(
+    across(everything(), as.factor))
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(test, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+plot_f1 <- ggplot(test_scores_unique, aes(x = factor(run), y = test_avg_precision)) +
+  geom_col(fill = "steelblue", color = 'black') +
+  theme_minimal() +
+  labs(x = "Model Run", y = "MCC Score", title = "MCC Score") +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Test - Top Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## Validation Summary
+
+```{r}
+cc <- c(max_features = "character", max_depth = "character")  # add more like criterion="character" if needed
+
+read_one <- function(path) {
+  read.csv(path, header = TRUE, stringsAsFactors = FALSE, colClasses = cc)
+}
+
+val1 <- read_one('final_plots/RF1_Top5_Validation.csv')
+val2 <- read_one('../tuning2/final_plots/RF2_Top5_Validation.csv')
+val3 <- read_one('../tuning3/final_plots/RF3_Top5_Validation.csv')
+val4 <- read_one('../tuning4/final_plots/RF4_Top5_Validation.csv')
+val5 <- read_one('../tuning5/final_plots/RF5_Top5_Validation.csv')
+
+val1$run <- 'run1'
+val2$run <- 'run2'
+val3$run <- 'run3'
+val4$run <- 'run4'
+val5$run <- 'run5'
+
+val <- dplyr::bind_rows(val1, val2, val3, val4, val5)
+
+val_scores <- val |> select(run, val_avg_precision)
+
+val_scores_unique <- val_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+val <- val %>%
+  select(-val_avg_precision, -run) %>%
+  mutate(
+    across(everything(), as.factor))
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(val, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+plot_f1 <- ggplot(val_scores_unique, aes(x = factor(run), y = val_avg_precision)) +
+  geom_col(fill = "steelblue", color = 'black') +
+  theme_minimal() +
+  labs(x = "Model Run", y = "MCC Score", title = "MCC Score") +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Validation - Top Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## All Datasets Summary
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- bind_rows(list(test, val))
+
+all <- all %>%
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(500, 1000)),
+    max_depth = factor(max_depth, levels = c(10, 12, 16, 20, "None")),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.3", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(5, 10, 20, 50)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 5, 10, 20))
+  )
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# --- Step 4: avg_precision Score Plot ---
+# Bring in CV, Test, and Val avg_precision side-by-side by run
+RF1_scores <- list(
+#  train_scores %>% select(run, cv_avg_precision),
+  test_scores  %>% select(run, test_avg_precision),
+  val_scores   %>% select(run, val_avg_precision)
+) %>%
+  purrr::reduce(left_join, by = "run")
+
+# Long format: set = cv_avg_precision / test_avg_precision / val_avg_precision
+scores_long <- RF1_scores %>%
+  pivot_longer(
+    cols = -run,
+    names_to = "set",
+    values_to = "ap"
+  )
+
+# One value per run & set (mean is trivial if already one row/run)
+summary_scores <- scores_long %>%
+  group_by(run, set) %>%
+  summarise(mean_ap = mean(ap, na.rm = TRUE), .groups = "drop")
+
+# Ensure legend order matches your palette
+summary_scores <- summary_scores %>%
+  mutate(set = factor(set, levels = c("test_avg_precision", "val_avg_precision")))
+
+plot_f1 <- ggplot(summary_scores, aes(x = factor(run), y = mean_ap, fill = set)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, color = "black") +
+  geom_text(
+    aes(y = mean_ap + 0.04, label = sprintf("%.2f", mean_ap), group = set),
+    position = position_dodge(width = 0.7), size = 3, vjust = 0
+  ) +
+  scale_fill_manual(
+    values = c("test_avg_precision" = "#2ca02c", "val_avg_precision" = "#ff7f0e"),
+    name   = "Score Type",
+    labels = c("Test", "Evaluation")
+  ) +
+  theme_minimal() +
+  labs(x = "Model Run", y = "Average Precision") +
+  coord_cartesian(ylim = c(0, 0.7))
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1))
+
+final_plot
+
+
+```
+
+## Upset Plot
+
+```{r}
+# Step 1: Filter and add a unique row ID for each model
+filtered <- train %>%
+  select(
+    n_estimators,
+    max_depth,
+    min_samples_split,
+    min_samples_leaf,
+    criterion,
+    max_features
+  ) %>%
+  # filter(
+  #   criterion == "entropy",
+  #   max_features == 0.5
+  # ) %>%
+  #select(-criterion, -max_features) %>%
+  mutate(row_id = row_number())  # Add unique row ID
+
+# Step 2: Convert to long format and flag presence
+filtered_long <- filtered %>%
+  pivot_longer(cols = -row_id, names_to = "param", values_to = "value") %>%
+  mutate(present = TRUE) %>%
+  unite("feature", param, value, sep = "_")
+
+# Step 3: Convert to binary wide format
+binary_data <- filtered_long %>%
+  pivot_wider(
+    id_cols = row_id,
+    names_from = feature,
+    values_from = present,
+    values_fill = list(present = FALSE)
+  ) %>%
+  select(-row_id)
+
+# Step 4: Make the upset plot
+upset(
+  data = binary_data,
+  intersect = colnames(binary_data),
+  name = "Hyperparameter Combination",
+  # remove the numbers above the top bars
+  base_annotations = list(
+    "Intersection size" = intersection_size(counts = FALSE)
+  ),
+  # make the matrix dots/lines smaller via the matrix arg
+  matrix = intersection_matrix(
+    geom    = geom_point(size = 0.75),          # smaller nodes
+    segment = geom_segment(linewidth = 0.2)     # thinner connecting lines
+  ),
+  height_ratio = 1.3,
+  width_ratio  = 0.25,
+  # optional: tidy up set-size labels
+  set_sizes = upset_set_size() +
+    theme(axis.text.x = element_text(hjust = 1, vjust = 1, size = 8))
+)
+
+ggsave("final_plots/RF_upset.png", plot = last_plot(),
+       width = 12, height = 8, units = "in", dpi = 300)
+```
+
+## Validation and Test Summary
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- bind_rows(list(test, val))
+
+# Convert to factors with correct level ordering
+all <- all %>%
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(50, 100, 500, 1000, 1500)),
+    max_depth = factor(max_depth, levels = c(3, 7, 12, 20, 50, 100)),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(20, 50, 100, 200, 500)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 5, 10, 20, 50))
+  )
+
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# --- Step 4: MCC Score Plot ---
+RF1_scores <- test_scores_unique %>%
+  left_join(val_scores_unique, by = "run")
+
+scores_long <- RF1_scores %>%
+  pivot_longer(cols = -run, names_to = "set", values_to = "f1")
+
+# Summarize mean MCC Score
+summary_scores <- scores_long %>%
+  group_by(run, set) %>%
+  summarise(mean_f1 = mean(f1, na.rm = TRUE), .groups = "drop")
+
+# Plot with text labels for mean
+plot_f1 <- ggplot(summary_scores, aes(x = factor(run), y = mean_f1, fill = set)) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6,
+    color = 'black',
+    stat = "identity"
+  ) +
+  geom_text(
+    data = summary_scores,
+    aes(
+      x = factor(run),
+      y = mean_f1 + 0.04,
+      label = sprintf("%.2f", mean_f1),
+      group = set
+    ),
+    position = position_dodge(width = 0.7),
+    size = 3,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = c("cv_ap" = "#1f77b4", "test_avg_precision" = "#2ca02c", "val_avg_precision" = "#ff7f0e")) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "MCC Score",
+    title = "MCC Score (Mean Highlighted)",
+    fill = "Score Type"
+  ) +
+  coord_cartesian(ylim = c(0, 0.75))
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1)) +
+  plot_annotation(
+    title = "Test and Validation Datasets – Top Models",
+  )
+
+final_plot
+```
+
+# Top 5 Models
+
+## Training Summary
+
+```{r}
+# train <- read.csv('RF_summaries/RF1_Top5_Training.csv', header=TRUE)
+# 
+# train_scores <- train |> select(run, cv_ap)
+# 
+# # train_scores_unique <- train_scores %>%
+# #   distinct(run, .keep_all = TRUE)
+# 
+# train <- train %>%
+#   select(-cv_ap, -run) %>%
+#   mutate(
+#     # Recode first, then convert to factor
+#     max_features = case_when(
+#       max_features == "1" ~ "0.5",
+#       max_features == "2" ~ "sqrt",
+#       max_features == "3" ~ "log2",
+#       TRUE ~ as.character(max_features)  # <-- required fallback
+#     ),
+#     criterion = case_when(
+#       criterion == "1" ~ "gini",
+#       criterion == "2" ~ "entropy",
+#       TRUE ~ as.character(criterion)
+#     )
+#   ) %>%
+#   mutate(across(everything(), as.factor)) 
+```
+
+```{r}
+# #| fig-height: 8
+# #| fig-width: 8
+# 
+# train_scores_grouped <- train_scores %>%
+#   group_by(run) %>%
+#   mutate(instance = row_number()) %>%
+#   ungroup()
+# 
+# param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+# 
+# plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+# 
+# param_plots <- map2(param_cols, plot_colors, function(param, color) {
+#   ggplot(train, aes_string(x = param)) +
+#     geom_bar(fill = color, color = "black") +
+#     theme_minimal() +
+#     labs(title = param, x = NULL, y = "Count")
+# })
+# 
+# param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+# 
+# train_summary <- train_scores_grouped %>%
+#   group_by(run) %>%
+#   summarise(
+#     min_f1 = min(cv_ap, na.rm = TRUE),
+#     max_f1 = max(cv_ap, na.rm = TRUE),
+#     mean_f1 = mean(cv_ap, na.rm = TRUE),
+#     .groups = "drop"
+#   )
+# 
+# plot_f1 <- ggplot(train_summary, aes(x = factor(run), y = mean_f1)) +
+#   geom_col(fill = "steelblue", width = 0.6) +
+#   geom_errorbar(
+#     aes(ymin = min_f1, ymax = max_f1),
+#     width = 0.2,
+#     color = "black",
+#     size = 0.6
+#   ) +
+#   geom_text(
+#     aes(label = sprintf("%.2f", mean_f1), y = mean_f1 + 0.06),
+#     size = 3.5
+#   ) +
+#   theme_minimal() +
+#   labs(
+#     x = "Model Run",
+#     y = "MCC Score",
+#     title = "MCC Score per Run (Mean with Range)"
+#   ) +
+#   ylim(0, 0.75)
+# 
+# (param_plot_grid / plot_f1) + 
+#   plot_layout(heights = c(3, 2)) +
+#   plot_annotation(
+#     title = "Training - Top 5 Models",
+#     theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+#   )
+```
+
+## Test Summary
+
+```{r}
+test <- read.csv('RF_summaries/RF1_Top5_Test.csv', header=TRUE)
+
+test <- test %>%
+  mutate(max_depth = replace_na(as.character(max_depth), "None"))
+
+test_scores <- test |> select(run, test_avg_precision)
+
+test_scores_unique <- test_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+test <- test %>%
+  select(-test_avg_precision, -run) %>%
+  mutate(
+    # Recode first, then convert to factor
+    max_features = case_when(
+      max_features == "1" ~ "0.5",
+      max_features == "2" ~ "sqrt",
+      max_features == "3" ~ "log2",
+      TRUE ~ as.character(max_features)  # <-- required fallback
+    ),
+    criterion = case_when(
+      criterion == "1" ~ "gini",
+      criterion == "2" ~ "entropy",
+      TRUE ~ as.character(criterion)
+    )
+  ) %>%
+  mutate(across(everything(), as.factor)) 
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+test_scores_grouped <- test_scores %>%
+  group_by(run) %>%
+  mutate(instance = row_number()) %>%
+  ungroup()
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(test, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+test_summary <- test_scores_grouped %>%
+  group_by(run) %>%
+  summarise(
+    min_f1 = min(test_avg_precision, na.rm = TRUE),
+    max_f1 = max(test_avg_precision, na.rm = TRUE),
+    mean_f1 = mean(test_avg_precision, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+plot_f1 <- ggplot(test_summary, aes(x = factor(run), y = mean_f1)) +
+  geom_col(fill = "steelblue", width = 0.6) +
+  geom_errorbar(
+    aes(ymin = min_f1, ymax = max_f1),
+    width = 0.2,
+    color = "black",
+    size = 0.6
+  ) +
+  geom_text(
+    aes(label = sprintf("%.2f", mean_f1), y = mean_f1 + 0.06),
+    size = 3.5
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "MCC Score",
+    title = "MCC Score (Mean with Range)"
+  ) +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## Validation Summary
+
+```{r}
+val <- read.csv('RF_summaries/RF1_Top5_Validation.csv', header=TRUE)
+
+val <- val %>%
+  mutate(max_depth = replace_na(as.character(max_depth), "None"))
+
+val_scores <- val |> select(run, val_avg_precision)
+
+val_scores_unique <- val_scores %>%
+  distinct(run, .keep_all = TRUE)
+
+val <- val %>%
+  select(-val_avg_precision, -run) %>%
+  mutate(
+    # Recode first, then convert to factor
+    max_features = case_when(
+      max_features == "1" ~ "0.5",
+      max_features == "2" ~ "sqrt",
+      max_features == "3" ~ "log2",
+      TRUE ~ as.character(max_features)  # <-- required fallback
+    ),
+    criterion = case_when(
+      criterion == "1" ~ "gini",
+      criterion == "2" ~ "entropy",
+      TRUE ~ as.character(criterion)
+    )
+  ) %>%
+  mutate(across(everything(), as.factor)) 
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+val_scores_grouped <- val_scores %>%
+  group_by(run) %>%
+  mutate(instance = row_number()) %>%
+  ungroup()
+
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(val, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+val_summary <- val_scores_grouped %>%
+  group_by(run) %>%
+  summarise(
+    min_f1 = min(val_avg_precision, na.rm = TRUE),
+    max_f1 = max(val_avg_precision, na.rm = TRUE),
+    mean_f1 = mean(val_avg_precision, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+plot_f1 <- ggplot(val_summary, aes(x = factor(run), y = mean_f1)) +
+  geom_col(fill = "steelblue", width = 0.6) +
+  geom_errorbar(
+    aes(ymin = min_f1, ymax = max_f1),
+    width = 0.2,
+    color = "black",
+    size = 0.6
+  ) +
+  geom_text(
+    aes(label = sprintf("%.2f", mean_f1), y = mean_f1 + 0.06),
+    size = 3.5
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "MCC Score",
+    title = "MCC Score per Run (Mean with Range)"
+  ) +
+  ylim(0, 0.75)
+
+(param_plot_grid / plot_f1) + 
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(
+    title = "Validation - Top 5 Models",
+    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+  )
+```
+
+## All Datasets Summary
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- bind_rows(list(test, val))
+
+all <- all %>%
+  mutate(max_depth = replace_na(max_depth, "None")) |>
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(500, 1000, 1500)),
+    max_depth = factor(max_depth, levels = c(100, 500, "None")),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(20, 100, 500)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 10, 50))
+  )
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+ggsave(
+  filename = "plots/RF_hyperparam_summary.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = param_plot_grid,          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 6,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- read_csv('final_plots/RF_top_models.csv')
+
+all <- all %>%
+  mutate(max_depth = replace_na(max_depth, "None")) |>
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(500, 1000, 1500)),
+    max_depth = factor(max_depth, levels = c(100, 500, "None")),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(20, 100, 500)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 10, 50))
+  )
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count")
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+param_plot_grid
+
+ggsave(
+  filename = "final_plots/RF_hyperparam_summary.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = param_plot_grid,          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 6,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+```
+
+## Validation and Test Summary
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Combine all
+all <- bind_rows(list(test, val))
+
+all <- all %>%
+  mutate(
+    n_estimators = factor(n_estimators, levels = c(500, 1000, 1500)),
+    max_depth = factor(max_depth, levels = c(100, 500, "None")),
+    max_features = factor(max_features, levels = c("sqrt", "log2", "0.5")),
+    criterion = factor(criterion, levels = c("gini", "entropy")),
+    min_samples_split = factor(min_samples_split, levels = c(20, 100, 500)),
+    min_samples_leaf = factor(min_samples_leaf, levels = c(1, 10, 50))
+  )
+
+# Color palette
+param_cols <- c("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "criterion")
+
+plot_colors <- brewer.pal(n = length(param_cols), name = "Dark2")
+
+param_plots <- map2(param_cols, plot_colors, function(param, color) {
+  ggplot(all, aes_string(x = param)) +
+    geom_bar(fill = color, color = "black") +
+    theme_minimal() +
+    labs(title = param, x = NULL, y = "Count") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+})
+
+param_plot_grid <- wrap_plots(param_plots, ncol = 3)
+
+# --- Step 4: MCC Score Plot ---
+RF1_scores <- test_scores %>%
+  left_join(val_scores, by = "run")
+
+scores_long <- RF1_scores %>%
+  pivot_longer(cols = -run, names_to = "set", values_to = "f1")
+
+# Summarize mean, min, and max MCC Score
+summary_scores <- scores_long %>%
+  group_by(run, set) %>%
+  summarise(
+    mean_f1 = mean(f1, na.rm = TRUE),
+    ymin = min(f1, na.rm = TRUE),
+    ymax = max(f1, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Final plot with bars, error bars, and mean labels
+plot_f1 <- ggplot(summary_scores, aes(x = factor(run), y = mean_f1, fill = set)) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6,
+    # color = 'black',
+    stat = "identity"
+  ) +
+  geom_errorbar(
+    data = summary_scores,
+    aes(x = factor(run), ymin = ymin, ymax = ymax, group = set),
+    position = position_dodge(width = 0.7),
+    width = 0.25,
+    size = 0.75,
+    color = "black",
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = summary_scores,
+    aes(x = factor(run), y = ymax + 0.06, label = sprintf("%.2f", mean_f1), group = set),
+    position = position_dodge(width = 0.7),
+    size = 3,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = c("cv_ap" = "#1f77b4", "test_avg_precision" = "#2ca02c", "val_avg_precision" = "#ff7f0e")) +
+  theme_minimal() +
+  labs(
+    x = "Model Run",
+    y = "MCC Score",
+    title = "Mean MCC Score and Range",
+    fill = "Score Type"
+  ) +
+  coord_cartesian(ylim = c(0, 0.75))
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1)) +
+  plot_annotation(
+    title = "All Datasets – Top Models",
+  )
+
+# --- Step 5: Combine all plots with title ---
+final_plot <- (param_plot_grid / plot_f1) +
+  plot_layout(heights = c(3, 1)) +
+  plot_annotation(
+    title = "All Datasets – Top Models",
+  )
+
+final_plot
+```
+
+## Upset Plot
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Step 1: Filter and add a unique row ID for each model
+filtered <- all %>%
+  mutate(max_depth = replace_na(max_depth, "None")) |>
+  select(
+    n_estimators,
+    max_depth,
+    min_samples_split,
+    min_samples_leaf,
+    criterion,
+    max_features
+  ) %>%
+  mutate(row_id = row_number())  # Add unique row ID
+
+# Step 2: Convert to long format and flag presence
+filtered_long <- filtered %>%
+  pivot_longer(cols = -row_id, names_to = "param", values_to = "value") %>%
+  mutate(present = TRUE) %>%
+  unite("feature", param, value, sep = "_")
+
+# Step 3: Convert to binary wide format
+binary_data <- filtered_long %>%
+  pivot_wider(
+    id_cols = row_id,
+    names_from = feature,
+    values_from = present,
+    values_fill = list(present = FALSE)
+  ) %>%
+  select(-row_id)
+
+# Step 4: Make the upset plot
+upset(
+  binary_data,
+  intersect = colnames(binary_data),
+  name = "Hyperparameter Combination",
+  height_ratio = 1.3
+)
+
+ggsave(
+  filename = "final_plots/RF_upset.png",       # File name (can be .png, .pdf, .jpeg, etc.)
+  plot = last_plot(),          # Or specify a plot object, e.g., plot = p
+  device = NULL,               # Auto-detects from file extension, or specify like "png", "pdf"
+  path = NULL,                 # Optional: directory to save file in
+  scale = 1,                   # Scaling factor
+  width = 6,                   # Width in units
+  height = 6,                  # Height in units
+  units = "in",                # Units: "in", "cm", "mm"
+  dpi = 300,                   # Dots per inch (resolution)
+  limitsize = TRUE             # If TRUE, limits size to 50x50 inches
+)
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 8
+
+# Step 1: Filter and add a unique row ID for each model
+filtered <- all %>%
+  select(
+    n_estimators,
+    max_depth,
+    min_samples_split,
+    min_samples_leaf,
+    criterion,
+    max_features
+  ) %>%
+  filter(
+    criterion == "entropy",
+    max_features == 0.5
+  ) %>%
+  select(-criterion, -max_features) %>%
+  mutate(row_id = row_number())  # Add unique row ID
+
+# Step 2: Convert to long format and flag presence
+filtered_long <- filtered %>%
+  pivot_longer(cols = -row_id, names_to = "param", values_to = "value") %>%
+  mutate(present = TRUE) %>%
+  unite("feature", param, value, sep = "_")
+
+# Step 3: Convert to binary wide format
+binary_data <- filtered_long %>%
+  pivot_wider(
+    id_cols = row_id,
+    names_from = feature,
+    values_from = present,
+    values_fill = list(present = FALSE)
+  ) %>%
+  select(-row_id)
+
+# Step 4: Make the upset plot
+upset(
+  binary_data,
+  intersect = colnames(binary_data),
+  name = "Hyperparameter Combination",
+  height_ratio = 1.3,
+  min_size = 2
+)
+```
+
+I chose the right-most combination because it contains more hyperparameter values that were chosen more often by good models.
