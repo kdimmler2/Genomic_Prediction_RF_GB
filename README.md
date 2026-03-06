@@ -12,8 +12,8 @@ Clone the repository and create the conda environment:
 git clone https://github.com/kdimmler2/Genomic_Prediction_RF_GB.git
 cd Genomic_Prediction_RF_GB
 
-conda env create -f envs/environment.yml
-conda activate genomic_ml
+conda env create -f conda_env.yaml
+conda activate Genomic_Prediction_RF_GB
 ```
 
 ---
