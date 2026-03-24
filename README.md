@@ -45,12 +45,12 @@ Columns:
 2. Sample ID (must match VCF)  
 3. Covariates (optional additional columns allowed)  
 
-## Quick Start
+## Quick Start - Demo Data
 
 ### 1. Preprocess data
 
-    bash training_data.sh
-    bash validation_data.sh
+    bash data/preprocessing/training_data.sh
+    bash data_preprocessing/validation_data.sh
 
 Outputs:
 - `data_preprocessing/training_data/`  
