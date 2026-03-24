@@ -6,8 +6,6 @@ This repository contains workflows for building genomic prediction models from v
 
 This project was developed to support genomic prediction from sequencing-derived variant data using reproducible, workflow-based analyses. It includes preprocessing steps, model training and evaluation, feature reduction, and validation on an independent dataset. The repository is organized around end-to-end analysis rather than a single script, with separate components for preprocessing, random forest, gradient boosting, and elastic net modeling.
 
-![Workflow Diagram](images/workflow.png)
-
 <p align="center">
   <img src="images/workflow.png" width="700">
 </p>
