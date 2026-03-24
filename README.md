@@ -2,9 +2,26 @@
 
 This repository contains workflows for building genomic prediction models from variant data in VCF format to classify a binary phenotype. The pipeline uses random forest and gradient boosting models trained on genome-wide variant features, followed by feature reduction based on feature importance. Elastic net regression provides an additional layer of feature selection and a more interpretable predictive model.
 
-## Overview
+## Workflow Overview
 
 This project was developed to support genomic prediction from sequencing-derived variant data using reproducible, workflow-based analyses. It includes preprocessing steps, model training and evaluation, feature reduction, and validation on an independent dataset. The repository is organized around end-to-end analysis rather than a single script, with separate components for preprocessing, random forest, gradient boosting, and elastic net modeling.
+
+![Workflow Diagram](images/workflow.png)
+
+<p align="center">
+  <img src="images/workflow.png" width="700">
+</p>
+
+**Figure 1.** Workflow for model training, validation, and simplification across six models (RF and GB; STDB, TB, and combined-breed).
+
+**A.** The full dataset is divided into training and validation sets. The training set is further split into a fit set (for hyperparameter tuning), a calibration set (for threshold selection), and a test set (for evaluating generalizability). After selecting optimal hyperparameters, the model is trained on the full training set and evaluated on the validation set.  
+
+**B.** Variable importance scores (VIS) are obtained through permutation tests, defined as the mean change in average precision (AP) between the unpermuted and permuted models for each feature.  
+
+**C.** Features are ranked by VIS, and variants contributing up to 80% of cumulative predictive power are retained. RF and GB models are retrained using the selected features and validated. An elastic net (EN) model is then trained on the union of RF- and GB-selected features from each cohort and validated.  
+
+† Five-fold cross-validation.  
+‡ Hyperparameter tuning repeated across five independently resampled fit sets (runs).
 
 ## Repository Structure
 
