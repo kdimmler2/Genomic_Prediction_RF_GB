@@ -1,129 +1,131 @@
-# Creation of Genomic Prediction Models using Ensemble Machine Learning and Feature Reduction with Elastic Net
+# Genomic Prediction Models from Variant Data Using Ensemble Machine Learning and Elastic Net
 
-This workflow builds genomic prediction models from variant data in a VCF file to classify a binary phenotype. Random Forest and Gradient Boosting models are trained using genome-wide variant features, and feature importance scores are used for feature reduction. Elastic Net regression provides an additional layer of feature selection and produces a more interpretable predictive model.
+This repository contains workflows for building genomic prediction models from variant data in VCF format to classify a binary phenotype. The pipeline uses random forest and gradient boosting models trained on genome-wide variant features, followed by feature reduction based on feature importance. Elastic net regression provides an additional layer of feature selection and a more interpretable predictive model.
 
----
+## Overview
+
+This project was developed to support genomic prediction from sequencing-derived variant data using reproducible, workflow-based analyses. It includes preprocessing steps, model training and evaluation, feature reduction, and validation on an independent dataset. The repository is organized around end-to-end analysis rather than a single script, with separate components for preprocessing, random forest, gradient boosting, and elastic net modeling.
+
+## Repository Structure
+
+- `data_preprocessing/` — scripts and outputs for preparing training and validation datasets  
+- `random_forest/` — random forest training workflow  
+- `gradient_boosting/` — gradient boosting training workflow  
+- `elastic_net/` — elastic net modeling in R  
+- `R_scripts/` — supporting R scripts for downstream analysis and interpretation  
+- `demo_data/` — example input files  
+- `conda_env.yaml` — conda environment for setup  
+- `submit_data_preprocessing.slurm`, `slurm.RF` — example SLURM submission scripts  
+
+## Methods Summary
+
+The modeling strategy uses ensemble learning methods to capture predictive signal across genome-wide variant data. Random forest and gradient boosting models are trained first, and feature importance scores from those models can be used to create a reduced feature set. Elastic net is then used as an additional feature selection and modeling approach to produce a more interpretable predictive model.
 
 ## Installation
 
-Clone the repository and create the conda environment:
+    git clone https://github.com/kdimmler2/Genomic_Prediction_RF_GB.git
+    cd Genomic_Prediction_RF_GB
+    conda env create -f conda_env.yaml
+    conda activate Genomic_Prediction_RF_GB
 
-```bash
-git clone https://github.com/kdimmler2/Genomic_Prediction_RF_GB.git
-cd Genomic_Prediction_RF_GB
+## Input Data
 
-conda env create -f conda_env.yaml
-conda activate Genomic_Prediction_RF_GB
-```
+### Required Inputs
 
----
+- VCF file containing variant data  
+- Phenotype file with sample IDs matching the VCF  
+- Optional covariates  
 
-## Phenotype File Format
+Example phenotype format:
 
-A phenotype file with the following format is required:
+    0 HG00096 0
 
-```bash
-0 HG00096 0
-```
+Columns:
+1. Binary phenotype (0 or 1)  
+2. Sample ID (must match VCF)  
+3. Covariates (optional additional columns allowed)  
 
-The columns represent:
+## Quick Start
 
-1. **Binary phenotype** (0 or 1)  
-2. **Sample ID** as it appears in the VCF  
-3. **Covariates**
+### 1. Preprocess data
 
-Additional covariates can be included by adding extra columns.
+    bash training_data.sh
+    bash validation_data.sh
 
-An example file is provided in:
-
-```
-demo_data/training_phenos.txt
-```
-
----
-
-## Data Preprocessing
-
-Training and validation datasets are prepared using the following scripts:
-
-```bash
-bash training_data.sh
-bash validation_data.sh
-```
-
-Processed data will be written to:
-
-```
-data_preprocessing/training_data/
-data_preprocessing/validation_data/
-```
+Outputs:
+- `data_preprocessing/training_data/`  
+- `data_preprocessing/validation_data/`  
 
 ---
 
-## Random Forest and Gradient Boosting Training
+### 2. Train models
 
-Separate workflows are provided for Random Forest and Gradient Boosting models.  
-The pipeline structure is the same for both algorithms.
+Workflow stages:
+1. Hyperparameter tuning  
+2. Threshold tuning  
+3. Test metrics  
+4. Final training  
 
-The workflow stages are:
+Example commands are in:
 
-1. **Hyperparameter tuning**
-2. **Threshold tuning**
-3. **Test metrics**
-4. **Final training**
-
-It is recommended to run each stage sequentially. Example Snakemake commands are provided in:
-
-```
-random_forest/training/snakemake_commands.txt
-```
-
-### Hyperparameter Selection
-
-After hyperparameter tuning, results can be analyzed using the R script:
-
-```
-RF_RandomGS_Run1.qmd
-```
-
-The selected hyperparameters can then be entered into:
-
-```
-config.yaml
-```
-
-### Threshold Selection
-
-After threshold tuning, a classification threshold can be selected based on model performance and added to `config.yaml`.
-
-### Test Metrics
-
-This stage evaluates model performance on a subset of the training data.
-
-### Final Training
-
-After confirming acceptable performance, the final model is trained using the full training dataset.
+    random_forest/training/snakemake_commands.txt
 
 ---
 
-## Validation
+### 3. Validate model
 
-The trained model can then be applied to the validation dataset to generate predictions.
-
-All variants present in the training data must also be present in the validation data.
-
----
-
-## Feature Reduction
-
-Feature importance scores generated during final training can be used to select a reduced feature set.
-
-One common approach is to rank features by importance and include features until approximately **80% of the cumulative importance score** is reached.
+Apply trained model to validation dataset.  
+Validation data must contain the same variants used during training.
 
 ---
 
-## Elastic Net
+### 4. Feature reduction
 
-Elastic Net models are implemented in R using the same training and validation data splits.
+Rank features by importance and select top features (e.g., cumulative importance threshold ~80%).
 
-This provides an additional level of feature selection and produces a more interpretable predictive model.
+---
+
+### 5. Elastic net
+
+Run elastic net models in R for additional feature selection and interpretability.
+
+## Workflow Notes
+
+Designed for reproducible analysis with support for HPC environments (SLURM).
+
+## Example Use Case
+
+[ADD: 2–4 sentences describing the biological problem you applied this to]
+
+## Outputs
+
+- Processed datasets  
+- Trained models  
+- Performance metrics  
+- Feature importance rankings  
+- Reduced feature sets  
+- Validation predictions  
+
+[ADD: specific output files if desired]
+
+## Requirements / Environment
+
+- Conda environment (`conda_env.yaml`)  
+- HPC optional (SLURM scripts provided)  
+
+## Limitations
+
+- Validation dataset must contain training variants  
+- Phenotype file must match VCF sample IDs  
+- Currently designed for binary classification  
+
+## Future Improvements
+
+- Centralize configuration  
+- Expand example commands  
+- Add workflow diagram  
+- Include example outputs  
+
+## Contact
+
+[ADD: optional contact info]
