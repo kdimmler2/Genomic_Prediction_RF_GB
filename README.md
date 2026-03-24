@@ -10,7 +10,7 @@ This project was developed to support genomic prediction from sequencing-derived
   <img src="images/workflow.png" width="700">
 </p>
 
-**Figure 1.** Workflow for model training, validation, and simplification across six models (RF and GB; STDB, TB, and combined-breed).
+Workflow for model training, validation, and simplification across six models (RF and GB; STDB, TB, and combined-breed).
 
 **A.** The full dataset is divided into training and validation sets. The training set is further split into a fit set (for hyperparameter tuning), a calibration set (for threshold selection), and a test set (for evaluating generalizability). After selecting optimal hyperparameters, the model is trained on the full training set and evaluated on the validation set.  
 
