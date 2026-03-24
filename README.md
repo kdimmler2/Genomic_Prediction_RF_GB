@@ -121,8 +121,6 @@ Designed for reproducible analysis with support for HPC environments (SLURM).
 - Reduced feature sets  
 - Validation predictions  
 
-[ADD: specific output files if desired]
-
 ## Requirements / Environment
 
 - Conda environment (`conda_env.yaml`)  
@@ -137,10 +135,10 @@ Designed for reproducible analysis with support for HPC environments (SLURM).
 ## Future Improvements
 
 - Centralize configuration  
-- Expand example commands  
-- Add workflow diagram  
-- Include example outputs  
+- Expand example commands
+- Improve flow and accessability 
 
 ## Contact
 
-[ADD: optional contact info]
+Kirsten Dimmler
+kirstendimmler@gmail.com
