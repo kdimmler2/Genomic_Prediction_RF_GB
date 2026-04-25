@@ -63,9 +63,9 @@ Columns:
 ## Quick Start - Demo Data
 
 ### 1. Preprocess data
-
-    bash data/preprocessing/training_data.sh
-    bash data_preprocessing/validation_data.sh
+    cd data_preprocessing
+    bash training_data.sh
+    bash validation_data.sh
 
 Outputs:
 - `data_preprocessing/training_data/`  
