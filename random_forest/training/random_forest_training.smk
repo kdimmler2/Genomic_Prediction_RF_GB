@@ -3,6 +3,7 @@
 ########################################
 import os
 
+# use 4 cores if number of cores is not defined in the rule
 SUBCORES = int(os.environ.get("SUBCORES", "4"))
 
 DONE_DIR = ".done_rf"
