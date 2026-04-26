@@ -61,6 +61,20 @@ Columns:
 3. Covariates (optional additional columns allowed)  
 
 ## Quick Start - Demo Data
+This section details how to run the example data. The pipeline is primarily designed for use in a SLURM-based HPC environment and can be run using:
+
+    cd Genomic_Prediction_RF_GB/random_forest/training
+    sbatch submit_random_forest.slurm
+
+In this case, SLURM parameters are defined in:
+
+    slurm.RF
+
+and can be defined based on the specific system. All logs using this method go to:
+
+    .logs/
+
+---
 
 ### 1. Preprocess data
     cd data_preprocessing
