@@ -47,7 +47,7 @@ The modeling strategy uses ensemble learning methods to capture predictive signa
 
 ### Required Inputs
 
-- VCF file containing variant data  
+- VCF file containing variant data with variant IDs (chr_pos_ref_alt)
 - Phenotype file with sample IDs matching the VCF  
 - Optional covariates  
 
