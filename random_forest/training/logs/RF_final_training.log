@@ -1,0 +1,32 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Job stats:
+job                      count    min threads    max threads
+---------------------  -------  -------------  -------------
+all                          1              1              1
+rf_feature_importance        1              1              1
+total                        2              1              1
+
+Select jobs to execute...
+
+[Sun Apr 26 10:33:46 2026]
+rule rf_feature_importance:
+    input: ../../data_preprocessing/training_data/modeling_input.txt
+    output: results/final_training/importance_scores.csv
+    jobid: 2
+    reason: Missing output files: results/final_training/importance_scores.csv
+    resources: tmpdir=/tmp, time=60, mem_mb=12000, mem_mib=11445, nodes=1, cpus_per_task=1, ntasks=1
+
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Provided resources: time=60, mem_mb=12000, mem_mib=11445, nodes=1, cpus_per_task=1, ntasks=1
+Select jobs to execute...
+/users/7/dimml002/miniforge3/envs/Genomic_Prediction_RF_GB/lib/python3.12/site-packages/sklearn/metrics/_scorer.py:548: FutureWarning: The `needs_threshold` and `needs_proba` parameter are deprecated in version 1.4 and will be removed in 1.6. You can either let `response_method` be `None` or set it to `predict` to preserve the same behaviour.
+  warnings.warn(
+Shutting down, this might take some time.
+Exiting because a job execution failed. Look above for error message
+Complete log: .snakemake/log/2026-04-26T103345.331325.snakemake.log
