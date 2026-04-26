@@ -1,4 +1,4 @@
-name: sklearn
+name: Genomic_Prediction_RF_GB
 channels:
   - conda-forge
   - bioconda
