@@ -68,7 +68,7 @@ This section details how to run the example data. The pipeline is primarily desi
 
 In this case, SLURM parameters are defined in:
 
-    slurm.RF
+    slurm.RF/
 
 and can be defined based on the specific system. All logs using this method go to:
 
@@ -119,12 +119,23 @@ Logs are stored in:
 
 and contain pipeline-level logs (random_forest_training.err/out) and rule-level logs.
 
+The gradient boosting pipeline is run in the same way in:
+
+    gradient_boosting/training/
+
 ---
 
 ### 3. Validate model
 
 Apply trained model to validation dataset.  
 Validation data must contain the same variants used during training.
+Validation datset should be entirely independent from the data used during training.
+- **Main ouputs:** A confusion matrix and the classification metrics for the validation set
+
+To run:
+
+    cd random_forest/validation
+    bash validate.sh
 
 ---
 
@@ -132,11 +143,13 @@ Validation data must contain the same variants used during training.
 
 Rank features by importance and select top features (e.g., cumulative importance threshold ~80%).
 
+This section is under construction. Feature reduction was done in R.
+
 ---
 
 ### 5. Elastic net
 
-Run elastic net models in R for additional feature selection and interpretability.
+Run elastic net models in R for additional feature selection and interpretability. This section is under construction.
 
 ## Workflow Notes
 
@@ -144,7 +157,7 @@ Designed for reproducible analysis with support for HPC environments (SLURM).
 
 ## Example Use Case
 
-[ADD: 2–4 sentences describing the biological problem you applied this to]
+This workflow as designed as part of a PhD project with the goal of creating a genomic prediction model for Recurrent Exertional Rhabdomyolysis (RER) in Thoroughbred and Standardbred racehorses. The project used data from a custom targeted sequencing panel which contained ~32,000 genetic variants that were used to build the model. RER is a moderately heritable (narrow-sense heritability ~ 0.4), complex disease. This workflow could reasonably be used to build models for any complex disease. It should be noted that all prediction models are heavily dependent on the characteristics of the individual dataset and research question, and there is no "best" prediction algorithm.
 
 ## Outputs
 
