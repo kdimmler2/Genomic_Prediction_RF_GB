@@ -94,20 +94,20 @@ Model training is organized as a staged workflow rather than a single fully auto
 The main training stages are:
 
 1. **Hyperparameter tuning**  
-     Randomized hyperparameter searches are run across a defined parameter space. The resulting model performance summaries are reviewed to identify parameter combinations that perform well and are reasonably stable across evaluation metrics.
-     - **Main outputs:** Table of performance metrics for each model, saved data split.
+   Randomized hyperparameter searches are run across a defined parameter space. The resulting model performance summaries are reviewed to identify parameter combinations that perform well and are reasonably stable across evaluation metrics.
+   - **Main outputs:** Table of performance metrics for each model, saved data split.
    
 3. **Threshold tuning**  
-     Candidate models are evaluated across a range of classification thresholds. This step is used because the default probability threshold of 0.5 may not be optimal for an imbalanced or biologically complex binary trait. The selected threshold is then carried forward into downstream evaluation.
-     - **Main outputs:** Table of performance metrics across classification thresholds, precision-recall curves and roc curves, and sample-level predicted probabilities.
+   Candidate models are evaluated across a range of classification thresholds. This step is used because the default probability threshold of 0.5 may not be optimal for an imbalanced or biologically complex binary trait. The selected threshold is then carried forward into downstream evaluation.
+   - **Main outputs:** Table of performance metrics across classification thresholds, precision-recall curves and ROC curves, and sample-level predicted probabilities.
 
 4. **Test-set evaluation**  
-     The selected model settings and threshold are evaluated on the held-out test set. This provides an estimate of model performance on data that were not used for hyperparameter or threshold selection.
-     - **Main outputs:** Tables of prediction metrics for classification (binary) and probabilities (continuous).
+   The selected model settings and threshold are evaluated on the held-out test set. This provides an estimate of model performance on data that were not used for hyperparameter or threshold selection.
+   - **Main outputs:** Tables of prediction metrics for classification (binary) and probabilities (continuous).
 
 6. **Final model training**  
-     After model settings have been selected and evaluated, final models are trained using the chosen parameters on the entire training set (tuning dataset + test hold out recombined). These models can then be used for downstream interpretation, feature importance extraction, or prediction on additional datasets.
-     - **Main outputs:** Saved final random forest model using the entire dataset.
+   After model settings have been selected and evaluated, final models are trained using the chosen parameters on the entire training set (tuning dataset + test holdout recombined). These models can then be used for downstream interpretation, feature importance extraction, or prediction on additional datasets.
+   - **Main outputs:** Saved final random forest model using the entire dataset.
 
 Example commands are in:
 
@@ -155,11 +155,11 @@ Elastic net modeling scripts are included, with additional documentation planned
 
 ## Workflow Notes
 
-Designed for reproducible analysis with support for HPC environments (SLURM).
+This workflow was designed for reproducible analysis in HPC environments using SLURM.
 
 ## Example Use Case
 
-This workflow was designed as part of a PhD project with the goal of creating a genomic prediction model for Recurrent Exertional Rhabdomyolysis (RER) in Thoroughbred and Standardbred racehorses. The project used data from a custom targeted sequencing panel which contained ~32,000 genetic variants that were used to build the model. RER is a moderately heritable (narrow-sense heritability ~ 0.4), complex disease. This workflow could reasonably be used to build models for any complex disease. It should be noted that all prediction models are heavily dependent on the characteristics of the individual dataset and research question, and there is no "best" prediction algorithm.
+This workflow was designed as part of a PhD project with the goal of creating a genomic prediction model for Recurrent Exertional Rhabdomyolysis (RER) in Thoroughbred and Standardbred racehorses. The project used data from a custom targeted sequencing panel which contained ~32,000 genetic variants that were used to build the model. RER is a moderately heritable (narrow-sense heritability ~ 0.4), complex disease. With appropriate modification, this workflow could be adapted to other binary genomic prediction problems involving complex disease traits. It should be noted that all prediction models are heavily dependent on the characteristics of the individual dataset and research question, and there is no "best" prediction algorithm.
 
 ## Outputs
 
@@ -190,8 +190,3 @@ If I continued developing this workflow, I would prioritize:
 - **Adding additional predictive algorithms:** The current workflow focuses primarily on random forest and gradient boosting approaches, with some additional elastic net scripts included. Future work could extend the workflow to compare additional algorithms within the same training, validation, and evaluation framework.
 
 - **Improving portability:** The workflow was developed for an HPC-based thesis analysis. Future improvements could include simplifying environment setup and containerizing the workflow with Apptainer/Singularity or Docker so it could be run more easily across computing environments.
-
-## Contact
-
-Kirsten Dimmler
-kirstendimmler@gmail.com
