@@ -23,9 +23,9 @@ Workflow for model training, validation, and simplification across six models (R
 
 ## Repository Structure
 
-- `data_preprocessing/` — scripts and outputs for preparing training and validation datasets  
-- `random_forest/` — random forest training workflow  
-- `gradient_boosting/` — gradient boosting training workflow  
+- `data_preprocessing/` — scripts and outputs for preparing training and validation datasets (note that the demo data outputs are in here on download)
+- `random_forest/` — random forest training workflow (note that the demo data outputs are in here on download)
+- `gradient_boosting/` — gradient boosting training workflow (note that the demo data outputs are in here on download)
 - `elastic_net/` — elastic net modeling in R  
 - `R_scripts/` — supporting R scripts for downstream analysis and interpretation  
 - `demo_data/` — example input files  
